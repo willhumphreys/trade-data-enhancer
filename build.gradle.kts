@@ -19,6 +19,10 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testCompileOnly("org.projectlombok:lombok:1.18.30") // For tests
     testAnnotationProcessor("org.projectlombok:lombok:1.18.30") // Enable annotation processing for tests
+
+    // Apache Commons CLI
+    implementation("commons-cli:commons-cli:1.5.0")
+
 }
 
 tasks.test {
