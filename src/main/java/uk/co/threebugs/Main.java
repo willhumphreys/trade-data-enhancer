@@ -23,15 +23,29 @@ public class Main {
             // Parse data file name (-f or --file, defaults to btcusd_1-min_data.csv)
             String dataFile = cmd.getOptionValue("f", "btcusd_1-min_data.csv");
 
-            // Run the application
-            var reader = new BitcoinMinuteDataReader();
-            var path = Path.of("data", dataFile);
+            // Define paths for intermediate files
+            Path inputPath = Path.of("data", dataFile);
+            Path validatedPath = Path.of("data", "validated_" + dataFile);
+            Path invalidPath = Path.of("data", "invalid_" + dataFile);
+            Path hourlyCheckedPath = Path.of("data", "checked_" + dataFile);
 
             try {
-                var data = reader.readFile(path);
-                new ATRAppender().appendATR(data, atrWindow).forEach(System.out::println);
+                // Step 1: Validate the data
+                var validator = new DataValidator();
+                validator.validateDataFile(inputPath, validatedPath, invalidPath);
+
+                // Step 2: Ensure hourly entries (streaming processing)
+                var hourlyChecker = new HourlyDataChecker();
+                hourlyChecker.ensureHourlyEntries(validatedPath, hourlyCheckedPath);
+
+                // Step 3: Append ATR values
+                var reader = new BitcoinMinuteDataReader();
+                var checkedData = reader.readFile(hourlyCheckedPath);
+                new ATRAppender().appendATR(checkedData, atrWindow).forEach(System.out::println);
+
             } catch (IOException e) {
-                System.err.println("Error reading file: " + e.getMessage());
+                System.err.println("Error during processing: " + e.getMessage());
+                e.printStackTrace();
             }
 
         } catch (ParseException e) {
