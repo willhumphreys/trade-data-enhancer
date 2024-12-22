@@ -23,6 +23,7 @@ dependencies {
 
     // Apache Commons CLI
     implementation("commons-cli:commons-cli:1.5.0")
+    implementation("ch.qos.logback:logback-classic:1.5.15")
 }
 
 tasks.test {

@@ -1,10 +1,13 @@
 package uk.co.threebugs;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.cli.*;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
+@Slf4j
 public class Main {
     public static void main(String[] args) {
         // Create Apache Commons CLI options
@@ -34,22 +37,29 @@ public class Main {
                 var validator = new DataValidator();
                 validator.validateDataFile(inputPath, validatedPath, invalidPath);
 
+                log.info("data validated");
+
+
                 // Step 2: Ensure hourly entries (streaming processing)
                 var hourlyChecker = new HourlyDataChecker();
                 hourlyChecker.ensureHourlyEntries(validatedPath, hourlyCheckedPath);
 
+                log.info("hour entries checked");
+
                 // Step 3: Append ATR values
                 var reader = new BitcoinMinuteDataReader();
                 var checkedData = reader.readFile(hourlyCheckedPath);
-                new ATRAppender().appendATR(checkedData, atrWindow).forEach(System.out::println);
+                List<MinuteDataWithATR> data = new ATRAppender().appendATR(checkedData, atrWindow).toList();
+
+                log.info("Processed {} entries", data.size());
 
             } catch (IOException e) {
-                System.err.println("Error during processing: " + e.getMessage());
-                e.printStackTrace();
+                log.error("Error during processing: {}", e.getMessage());
+
             }
 
         } catch (ParseException e) {
-            System.err.println("Error parsing command line arguments: " + e.getMessage());
+            log.error("Error parsing command line arguments: {}", e.getMessage());
 
             // Print usage help
             HelpFormatter formatter = new HelpFormatter();
