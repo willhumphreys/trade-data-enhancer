@@ -36,9 +36,10 @@ public class Main {
             var inputPath = inputDirectory.resolve(dataFile);
 
 
-            var validatedPath = outputDirectory.resolve("validated_" + dataFile);
-            var invalidPath = outputDirectory.resolve("invalid_" + dataFile);
-            var hourlyCheckedPath = outputDirectory.resolve("checked_" + dataFile);
+            var validatedPath = outputDirectory.resolve("1_validated_" + dataFile);
+            var invalidPath = outputDirectory.resolve("1_invalid_" + dataFile);
+            var hourlyCheckedPath = outputDirectory.resolve("2_checked_" + dataFile);
+            var atrOutputPath = outputDirectory.resolve("3_atr_" + dataFile);
 
             log.info("Processing data from {}", inputPath);
 
@@ -59,9 +60,9 @@ public class Main {
                 // Step 3: Append ATR values
                 var reader = new BitcoinMinuteDataReader();
                 var checkedData = reader.readFile(hourlyCheckedPath);
-                var data = new ATRAppender().appendATR(checkedData, atrWindow).toList();
+                new ATRAppender().appendATR(checkedData, atrWindow, atrOutputPath);
 
-                log.info("Processed {} entries", data.size());
+                //log.info("Processed {} entries", data.size());
 
             } catch (IOException e) {
                 log.error("Error during processing: {}", e.getMessage());

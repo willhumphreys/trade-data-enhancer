@@ -1,6 +1,5 @@
 package uk.co.threebugs;
 
-import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -27,17 +26,17 @@ public class DataValidator {
      * @throws IOException if file reading or writing fails.
      */
     public void validateDataFile(Path inputPath, Path validatedPath, Path invalidPath) throws IOException {
-        try (BufferedReader reader = Files.newBufferedReader(inputPath);
-             BufferedWriter validatedWriter = Files.newBufferedWriter(validatedPath);
-             BufferedWriter invalidWriter = Files.newBufferedWriter(invalidPath)) {
+        try (var reader = Files.newBufferedReader(inputPath);
+             var validatedWriter = Files.newBufferedWriter(validatedPath);
+             var invalidWriter = Files.newBufferedWriter(invalidPath)) {
 
             // Read the header and validate columns
-            String header = reader.readLine();
+            var header = reader.readLine();
             if (header == null) {
                 throw new IOException("The input file is empty.");
             }
 
-            List<String> columns = Arrays.asList(header.split(","));
+            var columns = Arrays.asList(header.split(","));
             validateColumns(columns, invalidWriter);
 
             // Write the cleaned header to the validated file
@@ -47,7 +46,7 @@ public class DataValidator {
             // Stream through the data, validating rows
             String line;
             while ((line = reader.readLine()) != null) {
-                String[] fields = line.split(",");
+                var fields = line.split(",");
 
                 // If the row is valid, write it to the validated file; otherwise, write to the invalid file
                 if (isValidRow(fields, columns)) {
@@ -69,7 +68,7 @@ public class DataValidator {
      * @throws IOException if writing to the invalid file fails.
      */
     private void validateColumns(List<String> columns, BufferedWriter invalidWriter) throws IOException {
-        for (String col : columns) {
+        for (var col : columns) {
             if (!REQUIRED_COLUMNS.contains(col)) {
                 invalidWriter.write("Invalid column: " + col);
                 invalidWriter.newLine();
@@ -77,7 +76,7 @@ public class DataValidator {
         }
 
         // Check for missing mandatory columns
-        for (String required : REQUIRED_COLUMNS) {
+        for (var required : REQUIRED_COLUMNS) {
             if (!columns.contains(required)) {
                 invalidWriter.write("Missing required column: " + required);
                 invalidWriter.newLine();
@@ -95,8 +94,8 @@ public class DataValidator {
     private boolean isValidRow(String[] fields, List<String> columns) {
         try {
             // Ensure mandatory fields exist
-            for (String required : REQUIRED_COLUMNS) {
-                int index = columns.indexOf(required);
+            for (var required : REQUIRED_COLUMNS) {
+                var index = columns.indexOf(required);
                 if (index < 0 || index >= fields.length || fields[index].isEmpty()) {
                     return false; // Missing required field
                 }
@@ -121,9 +120,9 @@ public class DataValidator {
      * @return A string with the validated row.
      */
     private String formatValidatedRow(String[] fields, List<String> columns) {
-        StringBuilder builder = new StringBuilder();
-        for (String required : REQUIRED_COLUMNS) {
-            int index = columns.indexOf(required);
+        var builder = new StringBuilder();
+        for (var required : REQUIRED_COLUMNS) {
+            var index = columns.indexOf(required);
             builder.append(fields[index]).append(',');
         }
         // Remove the trailing comma
