@@ -1,5 +1,7 @@
 package uk.co.threebugs;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -13,6 +15,7 @@ import java.util.stream.Stream;
  * A utility class for appending the Average True Range (ATR) to a stream of minute-level financial data.
  * ATR is a technical analysis indicator that measures market volatility.
  */
+@Slf4j
 public class ATRAppender {
 
     public void appendATR(Stream<MinuteData> data, int atrWindow1, Path outputPath) {
@@ -31,8 +34,12 @@ public class ATRAppender {
 
     }
 
+    private int processedCount = 0;
+    private double largestATR = 0.0;
+    private double smallestATR = Double.MAX_VALUE;
 
     public void writeStreamToFile(Stream<MinuteDataWithATR> stream, Path outputPath) {
+
         try (BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
 
             writer.write("Timestamp,Open,High,Low,Close,Volume,ATR");
@@ -42,6 +49,13 @@ public class ATRAppender {
                 try {
                     writer.write(formatDataEntry(dataWithATR));
                     writer.newLine();
+                    processedCount++;
+                    if (dataWithATR.atr() > largestATR) {
+                        largestATR = dataWithATR.atr();
+                    }
+                    if (dataWithATR.atr() < smallestATR) {
+                        smallestATR = dataWithATR.atr();
+                    }
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }
@@ -51,6 +65,7 @@ public class ATRAppender {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+        log.info("Added ATR to {} rows. Largest ATR: {} Smallest ATR: {}", processedCount, largestATR, smallestATR);
     }
 
     private String formatDataEntry(MinuteDataWithATR entry) {

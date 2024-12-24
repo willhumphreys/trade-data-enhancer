@@ -1,5 +1,7 @@
 package uk.co.threebugs;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -9,6 +11,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
+@Slf4j
 public class HourlyDataChecker {
 
     /**
@@ -22,6 +25,8 @@ public class HourlyDataChecker {
      * @throws IOException if reading or writing the file fails.
      */
     public void ensureHourlyEntries(Path inputPath, Path outputPath) throws IOException {
+        int addedEntriesCount = 0;
+        int existingLines = 0;
         try (BufferedReader reader = Files.newBufferedReader(inputPath);
              BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
 
@@ -47,8 +52,10 @@ public class HourlyDataChecker {
                         writer.write(formatDataEntry(missingEntry));
                         writer.newLine();
                         expectedHour = expectedHour.plusHours(1);
+                        addedEntriesCount++;
                     }
                 }
+                existingLines++;
 
                 // Write the current line to the output
                 writer.write(line);
@@ -57,6 +64,8 @@ public class HourlyDataChecker {
                 previousHourMarker = currentTimestamp;
             }
         }
+        log.info("Missing lines added {} to {}", addedEntriesCount, existingLines);
+
     }
 
     /**
