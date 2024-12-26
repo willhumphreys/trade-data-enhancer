@@ -43,6 +43,8 @@ public class Main {
             var atrOutputPath = outputDirectory.resolve("4_atr_" + dataFile);
             var timeStampOutputPath = outputDirectory.resolve("5_formatted_" + dataFile);
             var nameAppendedPath = outputDirectory.resolve("6_with_name_" + dataFile);
+            var finalOutputWithWeightingPath = outputDirectory.resolve("7_weighted_" + dataFile);
+            var newHourPath = outputDirectory.resolve("8_new_hour_" + dataFile);
 
             log.info("Processing data from {}", inputPath);
 
@@ -83,11 +85,14 @@ public class Main {
 
                 // Step 7: Add weighting column
                 var weightingAdder = new WeightingColumnAppender();
-                var finalOutputWithWeightingPath = outputDirectory.resolve("7_weighted_" + dataFile);
 
                 weightingAdder.addWeightingColumn(nameAppendedPath, finalOutputWithWeightingPath);
 
                 log.info("Weighting column added. Final output written to {}", finalOutputWithWeightingPath);
+
+                // Add the 'newHour' column
+                var newHourAdder = new NewHourColumnAdder();
+                newHourAdder.addNewHourColumn(nameAppendedPath, newHourPath);
 
             } catch (IOException e) {
                 log.error("Error during processing: {}", e.getMessage());

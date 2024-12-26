@@ -18,7 +18,7 @@ import java.time.format.DateTimeFormatter;
 @Slf4j
 public class TimestampFormatter {
 
-    private static final DateTimeFormatter TARGET_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH").withZone(ZoneOffset.UTC);
+    private static final DateTimeFormatter TARGET_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm").withZone(ZoneOffset.UTC);
 
     /**
      * Reads the input file, reformats the timestamp column, and writes to an output file.
