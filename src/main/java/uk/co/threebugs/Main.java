@@ -45,6 +45,7 @@ public class Main {
             var nameAppendedPath = outputDirectory.resolve("6_with_name_" + dataFile);
             var finalOutputWithWeightingPath = outputDirectory.resolve("7_weighted_" + dataFile);
             var newHourPath = outputDirectory.resolve("8_new_hour_" + dataFile);
+            var fixedLowHighPath = outputDirectory.resolve("9_fixed_low_high_" + dataFile);
 
             log.info("Processing data from {}", inputPath);
 
@@ -93,6 +94,11 @@ public class Main {
                 // Add the 'newHour' column
                 var newHourAdder = new NewHourColumnAdder();
                 newHourAdder.addNewHourColumn(nameAppendedPath, newHourPath);
+
+                var lowHighAdjuster = new LowHighColumnAdder();
+                lowHighAdjuster.addFixedLowAndHighColumns(newHourPath, fixedLowHighPath);
+
+                log.info("Added 'fixedLow' and 'fixedHigh' columns. Final output written to {}", fixedLowHighPath);
 
             } catch (IOException e) {
                 log.error("Error during processing: {}", e.getMessage());
