@@ -38,8 +38,11 @@ public class Main {
 
             var validatedPath = outputDirectory.resolve("1_validated_" + dataFile);
             var invalidPath = outputDirectory.resolve("1_invalid_" + dataFile);
-            var hourlyCheckedPath = outputDirectory.resolve("2_checked_" + dataFile);
-            var atrOutputPath = outputDirectory.resolve("3_atr_" + dataFile);
+            var decimalShiftedPath = outputDirectory.resolve("2_decimal_shifted_" + dataFile);
+            var hourlyCheckedPath = outputDirectory.resolve("3_checked_" + dataFile);
+            var atrOutputPath = outputDirectory.resolve("4_atr_" + dataFile);
+            var timeStampOutputPath = outputDirectory.resolve("5_formatted_" + dataFile);
+            var nameAppendedPath = outputDirectory.resolve("6_with_name_" + dataFile);
 
             log.info("Processing data from {}", inputPath);
 
@@ -48,25 +51,46 @@ public class Main {
                 var validator = new DataValidator();
                 validator.validateDataFile(inputPath, validatedPath, invalidPath);
 
-                log.info("data validated");
+                log.info("Data validated.");
 
+                // Step 2: Shift decimals to integers
+                var decimalShifter = new DecimalShifter();
+                decimalShifter.shiftDecimalPlaces(validatedPath, decimalShiftedPath);
 
-                // Step 2: Ensure hourly entries (streaming processing)
+                log.info("Decimal values shifted to integers.");
+
+                // Step 3: Ensure hourly entries (streaming processing)
                 var hourlyChecker = new HourlyDataChecker();
-                hourlyChecker.ensureHourlyEntries(validatedPath, hourlyCheckedPath);
+                hourlyChecker.ensureHourlyEntries(decimalShiftedPath, hourlyCheckedPath);
 
-                log.info("hour entries checked");
+                log.info("Hourly entries checked.");
 
-                // Step 3: Append ATR values
+                // Step 4: Append ATR values
                 var reader = new BitcoinMinuteDataReader();
                 var checkedData = reader.readFile(hourlyCheckedPath);
                 new ATRAppender().appendATR(checkedData, atrWindow, atrOutputPath);
 
-                //log.info("Processed {} entries", data.size());
+                // Step 5: Fix date formatting
+                var timestampFormatter = new TimestampFormatter();
+                timestampFormatter.reformatTimestamps(atrOutputPath, timeStampOutputPath);
+
+                // Step 6: Add file name as a column
+                var fileNameAppender = new FileNameAppender();
+                String fileNameWithoutExtension = dataFile.substring(0, dataFile.lastIndexOf('.'));
+                fileNameAppender.addFileNameColumn(timeStampOutputPath, nameAppendedPath, fileNameWithoutExtension);
+
+                log.info("File name column added. Final output written to {}", nameAppendedPath);
+
+                // Step 7: Add weighting column
+                var weightingAdder = new WeightingColumnAppender();
+                var finalOutputWithWeightingPath = outputDirectory.resolve("7_weighted_" + dataFile);
+
+                weightingAdder.addWeightingColumn(nameAppendedPath, finalOutputWithWeightingPath);
+
+                log.info("Weighting column added. Final output written to {}", finalOutputWithWeightingPath);
 
             } catch (IOException e) {
                 log.error("Error during processing: {}", e.getMessage());
-
             }
 
         } catch (ParseException e) {

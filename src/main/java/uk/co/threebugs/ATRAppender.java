@@ -7,9 +7,11 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
+
 
 /**
  * A utility class for appending the Average True Range (ATR) to a stream of minute-level financial data.
@@ -68,15 +70,20 @@ public class ATRAppender {
         log.info("Added ATR to {} rows. Largest ATR: {} Smallest ATR: {}", processedCount, largestATR, smallestATR);
     }
 
+
     private String formatDataEntry(MinuteDataWithATR entry) {
         MinuteData data = entry.minuteData();
+
+        // Create a DecimalFormat instance to format values without scientific notation
+        DecimalFormat decimalFormat = new DecimalFormat("0.############"); // No scientific notation
+
         return data.timestamp() + "," +
-                data.open() + "," +
-                data.high() + "," +
-                data.low() + "," +
-                data.close() + "," +
-                data.volume() + "," +
-                entry.atr();
+                decimalFormat.format(data.open()) + "," +
+                decimalFormat.format(data.high()) + "," +
+                decimalFormat.format(data.low()) + "," +
+                decimalFormat.format(data.close()) + "," +
+                decimalFormat.format(data.volume()) + "," +
+                decimalFormat.format(entry.atr());
     }
 
     private MinuteDataWithATR getMinuteDataWithATR(MinuteData minuteData, List<Double> previousCloses, int atrWindow, List<Double> atrValues) {
