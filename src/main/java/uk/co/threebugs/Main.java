@@ -93,7 +93,7 @@ public class Main {
 
                 // Add the 'newHour' column
                 var newHourAdder = new NewHourColumnAdder();
-                newHourAdder.addNewHourColumn(nameAppendedPath, newHourPath);
+                newHourAdder.addNewHourColumn(finalOutputWithWeightingPath, newHourPath);
 
                 var lowHighAdjuster = new LowHighColumnAdder();
                 lowHighAdjuster.addFixedLowAndHighColumns(newHourPath, fixedLowHighPath);

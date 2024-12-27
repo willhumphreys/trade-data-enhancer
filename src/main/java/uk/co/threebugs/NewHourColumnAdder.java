@@ -22,7 +22,7 @@ public class NewHourColumnAdder {
                 throw new IOException("Input file is empty or missing a header row");
             }
 
-            // Write updated header with the new column
+            // Write updated header with the new column, preserving the original columns
             writer.write(header + ",newHour");
             writer.newLine();
 
