@@ -7,6 +7,8 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
 public class LowHighColumnAdder {
@@ -23,6 +25,17 @@ public class LowHighColumnAdder {
                 throw new IOException("Input file is empty or missing a header row");
             }
 
+            // Dynamically find column indices from the header row
+            Map<String, Integer> columnIndexMap = getColumnIndexMap(header);
+
+            Integer highColIndex = columnIndexMap.get("High");
+            Integer lowColIndex = columnIndexMap.get("Low");
+
+            // Validate that required columns are present
+            if (highColIndex == null || lowColIndex == null) {
+                throw new IllegalArgumentException("Input file is missing required 'High' or 'Low' columns");
+            }
+
             // Write updated header with the new columns
             writer.write(header + ",fixedLow,fixedHigh");
             writer.newLine();
@@ -30,8 +43,7 @@ public class LowHighColumnAdder {
             String previousLine = null;
             String currentLine;
             while ((currentLine = reader.readLine()) != null) {
-
-                String updatedLine = processRow(previousLine, currentLine);
+                String updatedLine = processRow(previousLine, currentLine, highColIndex, lowColIndex);
                 writer.write(updatedLine);
                 writer.newLine();
                 previousLine = currentLine; // Shift to the next row
@@ -44,22 +56,31 @@ public class LowHighColumnAdder {
         }
     }
 
-    private String processRow(String previousRow, String currentRow) {
+    private Map<String, Integer> getColumnIndexMap(String header) {
+        String[] columns = header.split(",");
+        Map<String, Integer> columnIndexMap = new HashMap<>();
+        for (int i = 0; i < columns.length; i++) {
+            columnIndexMap.put(columns[i].trim(), i); // Trim to avoid issues with extra spaces
+        }
+        return columnIndexMap;
+    }
+
+    String processRow(String previousRow, String currentRow, int highColIndex, int lowColIndex) {
         String[] columns = currentRow.split(",");
         if (previousRow == null) {
             // For the first row, fixedLow == low, fixedHigh == high
-            return currentRow + "," + columns[4] + "," + columns[3];
+            return currentRow + "," + columns[lowColIndex] + "," + columns[highColIndex];
         }
 
         String[] previousColumns = previousRow.split(",");
-        double previousHigh = Double.parseDouble(previousColumns[3]); // high of the previous row
-        double previousLow = Double.parseDouble(previousColumns[4]); // low of the previous row
-        double currentHigh = Double.parseDouble(columns[3]); // high of the current row
-        double currentLow = Double.parseDouble(columns[4]); // low of the current row
+        long previousHigh = Long.parseLong(previousColumns[highColIndex]); // high of the previous row
+        long previousLow = Long.parseLong(previousColumns[lowColIndex]); // low of the previous row
+        long currentHigh = Long.parseLong(columns[highColIndex]); // high of the current row
+        long currentLow = Long.parseLong(columns[lowColIndex]); // low of the current row
 
-        // Adjust low and high if there are gaps
-        double fixedLow = Math.max(currentLow, previousHigh); // Ensure no gaps above
-        double fixedHigh = Math.min(currentHigh, previousLow); // Ensure no gaps below
+        // Adjust fixedLow and fixedHigh for long values
+        long fixedLow = Math.max(previousLow, currentLow); // Ensure no gaps below
+        long fixedHigh = Math.min(previousHigh, currentHigh); // Ensure no gaps above
 
         return currentRow + "," + fixedLow + "," + fixedHigh;
     }
