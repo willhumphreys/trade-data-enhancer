@@ -28,8 +28,8 @@ public class LowHighColumnAdder {
             // Dynamically find column indices from the header row
             Map<String, Integer> columnIndexMap = getColumnIndexMap(header);
 
-            Integer highColIndex = columnIndexMap.get("High");
-            Integer lowColIndex = columnIndexMap.get("Low");
+            Integer highColIndex = columnIndexMap.get("high");
+            Integer lowColIndex = columnIndexMap.get("low");
 
             // Validate that required columns are present
             if (highColIndex == null || lowColIndex == null) {

@@ -17,29 +17,29 @@ class LowHighColumnAdderTest {
     @Test
     void testProcessRow_shouldHandleFirstRow() {
         String previousRow = null;  // No previous row for the first row
-        String currentRow = "2023-10-01,Open,Close,5,3";
+        String currentRow = "2023-10-01,open,close,5,3";
 
         String result = columnAdder.processRow(previousRow, currentRow, 3, 4);
 
-        // Verify that fixedLow = Low and fixedHigh = High
-        assertThat(result).isEqualTo("2023-10-01,Open,Close,5,3,3,5");
+        // Verify that fixedLow = Low and fixedHigh = high
+        assertThat(result).isEqualTo("2023-10-01,open,close,5,3,3,5");
     }
 
     @Test
     void testProcessRow_shouldHandleSubsequentRows() {
-        String previousRow = "2023-10-01,Open,Close,5,3";
-        String currentRow = "2023-10-02,Open,Close,4,2";
+        String previousRow = "2023-10-01,open,close,5,3";
+        String currentRow = "2023-10-02,open,close,4,2";
 
         String result = columnAdder.processRow(previousRow, currentRow, 3, 4);
 
         // Verify that fixedLow and fixedHigh are computed correctly
-        assertThat(result.trim()).isEqualTo("2023-10-02,Open,Close,4,2,3,4");
+        assertThat(result.trim()).isEqualTo("2023-10-02,open,close,4,2,3,4");
     }
 
     @Test
     void testProcessRow_shouldThrowExceptionForMalformedRow() {
-        String previousRow = "2023-10-01,Open,Close,5,3";
-        String malformedRow = "2023-10-02,Open,Close";
+        String previousRow = "2023-10-01,open,close,5,3";
+        String malformedRow = "2023-10-02,open,close";
 
         assertThatThrownBy(() -> columnAdder.processRow(previousRow, malformedRow, 3, 4))
                 .isInstanceOf(ArrayIndexOutOfBoundsException.class)
@@ -48,8 +48,8 @@ class LowHighColumnAdderTest {
 
     @Test
     void testProcessRow_shouldThrowExceptionForInvalidNumberFormat() {
-        String previousRow = "2023-10-01,Open,Close,5,3";
-        String invalidRow = "2023-10-02,Open,Close,high,low";
+        String previousRow = "2023-10-01,open,close,5,3";
+        String invalidRow = "2023-10-02,open,close,high,low";
 
         assertThatThrownBy(() -> columnAdder.processRow(previousRow, invalidRow, 3, 4))
                 .isInstanceOf(NumberFormatException.class)
@@ -58,11 +58,11 @@ class LowHighColumnAdderTest {
 
     @Test
     void testProcessRow_shouldHandleEmptyPreviousRow() {
-        String currentRow = "2023-10-01,Open,Close,5,3";
+        String currentRow = "2023-10-01,open,close,5,3";
 
         String result = columnAdder.processRow(null, currentRow, 3, 4);
 
-        assertThat(result).isEqualTo("2023-10-01,Open,Close,5,3,3,5");
+        assertThat(result).isEqualTo("2023-10-01,open,close,5,3,3,5");
     }
 
     @Test
@@ -70,9 +70,9 @@ class LowHighColumnAdderTest {
         // Input file
         Path inputFile = tempDir.resolve("input.csv");
         Files.writeString(inputFile, """
-                Date,Open,Close,High,Low
-                2023-10-01,Open,Close,5,3
-                2023-10-02,Open,Close,4,2""");
+                Date,open,close,high,Low
+                2023-10-01,open,close,5,3
+                2023-10-02,open,close,4,2""");
 
         // Output file
         Path outputFile = tempDir.resolve("output.csv");
@@ -83,9 +83,9 @@ class LowHighColumnAdderTest {
         // Read and assert output
         String outputContent = Files.readString(outputFile);
         String expectedContent = """
-                Date,Open,Close,High,Low,fixedLow,fixedHigh
-                2023-10-01,Open,Close,5,3,3,5
-                2023-10-02,Open,Close,4,2,3,4""";
+                Date,open,close,high,Low,fixedLow,fixedHigh
+                2023-10-01,open,close,5,3,3,5
+                2023-10-02,open,close,4,2,3,4""";
 
         assertThat(outputContent.trim()).isEqualTo(expectedContent.trim());
     }
@@ -110,8 +110,8 @@ class LowHighColumnAdderTest {
         // Input file
         Path inputFile = tempDir.resolve("input_missing_columns.csv");
         Files.writeString(inputFile, """
-                Date,Open,Close
-                2023-10-01,Open,Close
+                Date,open,close
+                2023-10-01,open,close
                 """);
 
         // Output file
@@ -120,7 +120,7 @@ class LowHighColumnAdderTest {
         // Assert that processing fails due to missing columns
         assertThatThrownBy(() -> columnAdder.addFixedLowAndHighColumns(inputFile, outputFile))
                 .isInstanceOf(IllegalArgumentException.class)
-                .withFailMessage("Input file is missing required 'High' or 'Low' columns");
+                .withFailMessage("Input file is missing required 'high' or 'low' columns");
     }
 
     @Test
@@ -128,9 +128,9 @@ class LowHighColumnAdderTest {
         // Input file
         Path inputFile = tempDir.resolve("malformed.csv");
         Files.writeString(inputFile, """
-                Date,Open,Close,High,Low
-                2023-10-01,Open,Close,5,3
-                2023-10-02,Open,Close""");
+                Date,open,close,high,Low
+                2023-10-01,open,close,5,3
+                2023-10-02,open,close""");
 
         // Output file
         Path outputFile = tempDir.resolve("output.csv");
@@ -145,7 +145,7 @@ class LowHighColumnAdderTest {
     void testAddFixedLowAndHighColumns_shouldWriteOnlyHeaderForHeaderOnlyFile(@TempDir Path tempDir) throws IOException {
         // Input file
         Path inputFile = tempDir.resolve("headeronly.csv");
-        Files.writeString(inputFile, "Date,Open,Close,High,Low");
+        Files.writeString(inputFile, "Date,open,close,high,Low");
 
         // Output file
         Path outputFile = tempDir.resolve("output.csv");
@@ -155,7 +155,7 @@ class LowHighColumnAdderTest {
 
         // Read and assert output
         String outputContent = Files.readString(outputFile);
-        String expectedContent = "Date,Open,Close,High,Low,fixedLow,fixedHigh";
+        String expectedContent = "Date,open,close,high,Low,fixedLow,fixedHigh";
 
         assertThat(outputContent.trim()).isEqualTo(expectedContent.trim());
     }

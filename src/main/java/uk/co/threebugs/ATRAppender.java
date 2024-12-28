@@ -44,7 +44,7 @@ public class ATRAppender {
 
         try (BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
 
-            writer.write("Timestamp,Open,High,Low,Close,Volume,ATR");
+            writer.write("Timestamp,open,high,low,close,volume,atr");
             writer.newLine();
 
             stream.forEach(dataWithATR -> {

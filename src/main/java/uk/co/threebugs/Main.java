@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
 
 @Slf4j
 public class Main {
@@ -68,6 +69,18 @@ public class Main {
 
                 log.info("Hourly entries checked.");
 
+                // Step 3a: Verify data integrity (no missing hourly entries)
+                var integrityChecker = new DataIntegrityChecker();
+                String noGaps = integrityChecker.validateDataIntegrity(hourlyCheckedPath);
+
+                if (!Objects.equals(noGaps, "No issues found.")) {
+                    log.error("Data integrity check failed! There are gaps in the hourly data.");
+                    return; // Exit the program to prevent further processing of invalid data
+                } else {
+                    log.info("Data integrity check passed. No gaps detected.");
+                }
+
+
                 // Step 4: Append ATR values
                 var reader = new BitcoinMinuteDataReader();
                 var checkedData = reader.readFile(hourlyCheckedPath);
@@ -99,6 +112,13 @@ public class Main {
                 lowHighAdjuster.addFixedLowAndHighColumns(newHourPath, fixedLowHighPath);
 
                 log.info("Added 'fixedLow' and 'fixedHigh' columns. Final output written to {}", fixedLowHighPath);
+
+                var mapTimePath = outputDirectory.resolve("10_map_time_" + dataFile);
+
+                var mapTimeAdder = new MapTimeColumnAdder();
+                mapTimeAdder.addMapTimeColumnAndCheckHourlyTrades(fixedLowHighPath, mapTimePath);
+
+                log.info("Added 'mapTime' column. Final output written to {}", mapTimePath);
 
             } catch (IOException e) {
                 log.error("Error during processing: {}", e.getMessage());
