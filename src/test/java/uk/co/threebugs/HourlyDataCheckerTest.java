@@ -71,7 +71,7 @@ class HourlyDataCheckerTest {
      * @param volume    volume traded
      * @return CSV formatted row
      */
-    private String formatEntry(LocalDateTime timestamp, double open, double high, double low, double close, double volume) {
+    private String formatEntry(LocalDateTime timestamp, long open, long high, long low, long close, double volume) {
         long epochSeconds = timestamp.toEpochSecond(java.time.ZoneOffset.UTC);
         return epochSeconds + "," + open + "," + high + "," + low + "," + close + "," + volume;
     }
@@ -86,7 +86,7 @@ class HourlyDataCheckerTest {
         List<DataEntry> entries = new ArrayList<>();
         for (String line : lines) {
             String[] parts = line.split(",");
-            LocalDateTime timestamp = LocalDateTime.ofEpochSecond(Long.parseLong(parts[0]), 0, java.time.ZoneOffset.UTC);
+            LocalDateTime timestamp = LocalDateTime.ofEpochSecond((long) Double.parseDouble(parts[0]), 0, java.time.ZoneOffset.UTC);
             double open = Double.parseDouble(parts[1]);
             double high = Double.parseDouble(parts[2]);
             double low = Double.parseDouble(parts[3]);

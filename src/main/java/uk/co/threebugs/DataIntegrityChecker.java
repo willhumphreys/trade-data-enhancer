@@ -74,6 +74,7 @@ public class DataIntegrityChecker {
         if (parts.length == 0) throw new IllegalArgumentException("Malformed CSV line: " + line);
 
         long epochSeconds = (long) Double.parseDouble(parts[0]);
+
         return LocalDateTime.ofEpochSecond(epochSeconds, 0, ZoneOffset.UTC);
     }
 }

@@ -63,6 +63,16 @@ public class Main {
 
                 log.info("Decimal values shifted to integers.");
 
+                // Step 2a: Check if timestamps are in correct order
+                var timestampOrderChecker = new TimestampOrderChecker();
+                try {
+                    timestampOrderChecker.checkTimestampOrder(decimalShiftedPath);
+                    log.info("Timestamps are in correct order.");
+                } catch (IllegalStateException e) {
+                    log.error("Timestamps are not in order: {}", e.getMessage());
+                    throw e; // Terminate execution if timestamps are out of order
+                }
+
                 // Step 3: Ensure hourly entries (streaming processing)
                 var hourlyChecker = new HourlyDataChecker();
                 hourlyChecker.ensureHourlyEntries(decimalShiftedPath, hourlyCheckedPath);
@@ -74,8 +84,8 @@ public class Main {
                 String noGaps = integrityChecker.validateDataIntegrity(hourlyCheckedPath);
 
                 if (!Objects.equals(noGaps, "No issues found.")) {
-                    log.error("Data integrity check failed! There are gaps in the hourly data.");
-                    return; // Exit the program to prevent further processing of invalid data
+                    log.error("Data integrity check failed! {}", noGaps);
+                    throw new IllegalStateException("Data integrity check failed! %s".formatted(noGaps));
                 } else {
                     log.info("Data integrity check passed. No gaps detected.");
                 }

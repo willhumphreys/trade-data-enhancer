@@ -18,6 +18,18 @@ class DataIntegrityCheckerTest {
     private final DataIntegrityChecker checker = new DataIntegrityChecker();
 
     @Test
+    void testData20121104() throws IOException {
+        // Path to the pre-existing test file (ensure this path is correct in your setup)
+        Path testFile = Path.of("data/output/test_data_2012-11-04.csv");
+
+        // Run the integrity check (expecting failure right now)
+        String result = checker.validateDataIntegrity(testFile);
+
+        // Fail if a gap is detected or any issues are found
+        assertThat(result).isEqualTo("No issues found.");
+    }
+
+    @Test
     void checkForNoGaps_shouldReturnTrueForDataWithInBetweenEntries(@TempDir Path tempDir) throws IOException {
         Path file = tempDir.resolve("data_with_in_between_entries.csv");
 
