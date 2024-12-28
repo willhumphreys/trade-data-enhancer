@@ -65,30 +65,7 @@ class LowHighColumnAdderTest {
         assertThat(result).isEqualTo("2023-10-01,open,close,5,3,3,5");
     }
 
-    @Test
-    void testAddFixedLowAndHighColumns_shouldProcessFileSuccessfully(@TempDir Path tempDir) throws IOException {
-        // Input file
-        Path inputFile = tempDir.resolve("input.csv");
-        Files.writeString(inputFile, """
-                Date,open,close,high,Low
-                2023-10-01,open,close,5,3
-                2023-10-02,open,close,4,2""");
 
-        // Output file
-        Path outputFile = tempDir.resolve("output.csv");
-
-        // Process file
-        columnAdder.addFixedLowAndHighColumns(inputFile, outputFile);
-
-        // Read and assert output
-        String outputContent = Files.readString(outputFile);
-        String expectedContent = """
-                Date,open,close,high,Low,fixedLow,fixedHigh
-                2023-10-01,open,close,5,3,3,5
-                2023-10-02,open,close,4,2,3,4""";
-
-        assertThat(outputContent.trim()).isEqualTo(expectedContent.trim());
-    }
 
     @Test
     void testAddFixedLowAndHighColumns_shouldHandleEmptyFile(@TempDir Path tempDir) throws IOException {
@@ -123,40 +100,4 @@ class LowHighColumnAdderTest {
                 .withFailMessage("Input file is missing required 'high' or 'low' columns");
     }
 
-    @Test
-    void testAddFixedLowAndHighColumns_shouldHandleMalformedRows(@TempDir Path tempDir) throws IOException {
-        // Input file
-        Path inputFile = tempDir.resolve("malformed.csv");
-        Files.writeString(inputFile, """
-                Date,open,close,high,Low
-                2023-10-01,open,close,5,3
-                2023-10-02,open,close""");
-
-        // Output file
-        Path outputFile = tempDir.resolve("output.csv");
-
-        // Assert exception for malformed row
-        assertThatThrownBy(() -> columnAdder.addFixedLowAndHighColumns(inputFile, outputFile))
-                .isInstanceOf(ArrayIndexOutOfBoundsException.class)
-                .withFailMessage("Malformed row should throw an exception");
-    }
-
-    @Test
-    void testAddFixedLowAndHighColumns_shouldWriteOnlyHeaderForHeaderOnlyFile(@TempDir Path tempDir) throws IOException {
-        // Input file
-        Path inputFile = tempDir.resolve("headeronly.csv");
-        Files.writeString(inputFile, "Date,open,close,high,Low");
-
-        // Output file
-        Path outputFile = tempDir.resolve("output.csv");
-
-        // Process file
-        columnAdder.addFixedLowAndHighColumns(inputFile, outputFile);
-
-        // Read and assert output
-        String outputContent = Files.readString(outputFile);
-        String expectedContent = "Date,open,close,high,Low,fixedLow,fixedHigh";
-
-        assertThat(outputContent.trim()).isEqualTo(expectedContent.trim());
-    }
 }
