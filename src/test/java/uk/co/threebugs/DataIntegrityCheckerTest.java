@@ -36,11 +36,13 @@ class DataIntegrityCheckerTest {
                 formatEntry(LocalDateTime.of(2023, 2, 24, 18, 0), 105, 110, 100, 107, 250)
         ), StandardOpenOption.CREATE);
 
-        // Act
-        String result = checker.validateDataIntegrity(minuteFile, hourlyFile);
+        // Act and Assert
+        IllegalStateException exception = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> {
+            checker.validateDataIntegrity(minuteFile, hourlyFile);
+        });
 
-        // Assert
-        assertThat(result).isEqualTo("Error: Gap detected for timestamp where hourly data exists! Expected: 2023-02-24T18:00, Found: 2023-02-24T19:00.");
+        // Verifying exception message
+        assertThat(exception.getMessage()).isEqualTo("Error: Gap detected for timestamp where hourly data exists! Expected: 2023-02-24T18:00, Found: 2023-02-24T19:00.");
     }
 
     @Test
