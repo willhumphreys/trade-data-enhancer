@@ -49,7 +49,7 @@ public class DataIntegrityChecker {
                 } else {
                     // This is an hourly entry
                     if (previousTimestamp != null && !previousTimestamp.plusHours(1).equals(currentTimestamp)) {
-                        // Ensure no gap exists on an hour where there is hourly data
+                        // Ensure no gap exists on an hour when there is hourly data
                         LocalDateTime expectedTimestamp = previousTimestamp.plusHours(1);
                         if (hourlyTimestamps.contains(expectedTimestamp)) {
                             throw new IllegalStateException("Error: Gap detected for timestamp where hourly data exists! Expected: "

@@ -11,7 +11,7 @@ import java.util.Objects;
 
 @Slf4j
 public class Main {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         var options = new Options();
         options.addOption("w", "window", true, "ATR window size (e.g., 14 periods)");
         options.addOption("f", "file", true, "Minute data file name (e.g., spx-1m-btmF.csv)");
@@ -62,8 +62,6 @@ public class Main {
         } catch (ParseException e) {
             log.error("Error parsing command line arguments: {}", e.getMessage());
             new HelpFormatter().printHelp("Main", options);
-        } catch (Exception e) {
-            log.error("Unexpected error: {}", e.getMessage());
         }
     }
 
