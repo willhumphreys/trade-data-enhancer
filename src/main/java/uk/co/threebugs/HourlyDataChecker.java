@@ -3,6 +3,9 @@ package uk.co.threebugs;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -105,6 +108,58 @@ public class HourlyDataChecker {
     // existing methods (parseRows, parseHourlyRows, alignToStartOfHour, etc.) remain unchanged...
 
     /**
+     * Helper class to represent a row of data.
+     */
+    private static class RowData {
+        // DateTimeFormatter for UTC date conversion
+        private static final DateTimeFormatter UTC_DATE_FORMATTER =
+                DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
+        long timestamp;
+        long open;
+        long high;
+        long low;
+        long close;
+        double volume;
+
+        RowData(long timestamp, long open, long high, long low, long close, double volume) {
+            this.timestamp = timestamp;
+            this.open = open;
+            this.high = high;
+            this.low = low;
+            this.close = close;
+            this.volume = volume;
+        }
+
+        static RowData fromCsvLine(String line) {
+            String[] parts = line.split(",");
+            return new RowData(
+                    (long) Double.parseDouble(parts[0]),
+                    Long.parseLong(parts[1]),
+                    Long.parseLong(parts[2]),
+                    Long.parseLong(parts[3]),
+                    Long.parseLong(parts[4]),
+                    Double.parseDouble(parts[5])
+            );
+        }
+
+        /**
+         * Converts the timestamp to UTC date string.
+         */
+        String getUtcDate() {
+            return UTC_DATE_FORMATTER.format(Instant.ofEpochSecond(this.timestamp));
+        }
+
+        /**
+         * Converts the RowData to a CSV line, including the UTC date as the last column.
+         */
+        String toCsvLine() {
+            return String.format("%d.0,%d,%d,%d,%d,%f",
+                    this.timestamp, this.open, this.high, this.low, this.close, this.volume);
+        }
+    }
+    // existing methods (parseRows, parseHourlyRows, alignToStartOfHour, etc.) remain unchanged...
+
+    /**
      * Helper method to parse rows from the minute or hourly data.
      */
     private List<RowData> parseRows(List<String> lines) {
@@ -155,41 +210,41 @@ public class HourlyDataChecker {
         return (timestamp % 3600) == 0;
     }
 
-    /**
-     * Helper class to represent a row of data.
-     */
-    private static class RowData {
-        long timestamp;
-        long open;
-        long high;
-        long low;
-        long close;
-        double volume;
-
-        RowData(long timestamp, long open, long high, long low, long close, double volume) {
-            this.timestamp = timestamp;
-            this.open = open;
-            this.high = high;
-            this.low = low;
-            this.close = close;
-            this.volume = volume;
-        }
-
-        static RowData fromCsvLine(String line) {
-            String[] parts = line.split(",");
-            return new RowData(
-                    (long) Double.parseDouble(parts[0]),
-                    Long.parseLong(parts[1]),
-                    Long.parseLong(parts[2]),
-                    Long.parseLong(parts[3]),
-                    Long.parseLong(parts[4]),
-                    Double.parseDouble(parts[5])
-            );
-        }
-
-        String toCsvLine() {
-            return String.format("%d.0,%d,%d,%d,%d,%f",
-                    this.timestamp, this.open, this.high, this.low, this.close, this.volume);
-        }
-    }
+//    /**
+//     * Helper class to represent a row of data.
+//     */
+//    private static class RowData {
+//        long timestamp;
+//        long open;
+//        long high;
+//        long low;
+//        long close;
+//        double volume;
+//
+//        RowData(long timestamp, long open, long high, long low, long close, double volume) {
+//            this.timestamp = timestamp;
+//            this.open = open;
+//            this.high = high;
+//            this.low = low;
+//            this.close = close;
+//            this.volume = volume;
+//        }
+//
+//        static RowData fromCsvLine(String line) {
+//            String[] parts = line.split(",");
+//            return new RowData(
+//                    (long) Double.parseDouble(parts[0]),
+//                    Long.parseLong(parts[1]),
+//                    Long.parseLong(parts[2]),
+//                    Long.parseLong(parts[3]),
+//                    Long.parseLong(parts[4]),
+//                    Double.parseDouble(parts[5])
+//            );
+//        }
+//
+//        String toCsvLine() {
+//            return String.format("%d.0,%d,%d,%d,%d,%f",
+//                    this.timestamp, this.open, this.high, this.low, this.close, this.volume);
+//        }
+//    }
 }

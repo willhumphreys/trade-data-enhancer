@@ -126,7 +126,7 @@ public class Main {
 
         // Step 2: Validate data integrity
         var integrityChecker = new DataIntegrityChecker();
-        String integrityResult = integrityChecker.validateDataIntegrity(minuteData, hourlyChecked);
+        String integrityResult = integrityChecker.validateDataIntegrity(hourlyChecked, hourlyData);
 
         if (!Objects.equals(integrityResult, "No issues found.")) {
             log.error("Data integrity check failed! {}", integrityResult);

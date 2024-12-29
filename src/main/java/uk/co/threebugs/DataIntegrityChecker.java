@@ -24,66 +24,42 @@ public class DataIntegrityChecker {
      * @throws IOException if reading the file fails.
      */
     public String validateDataIntegrity(Path minuteFilePath, Path hourlyFilePath) throws IOException {
-        boolean hasIntermediateData = false; // Tracks if we have any data that isn't on the hour
-        LocalDateTime previousTimestamp = null;
+        // Load all timestamps from the minute file
+        Set<LocalDateTime> minuteTimestamps = loadMinuteTimestamps(minuteFilePath);
 
-        // Load hourly timestamps from the hourly file
-        Set<LocalDateTime> hourlyTimestamps = loadHourlyTimestamps(hourlyFilePath);
-
-        try (BufferedReader reader = Files.newBufferedReader(minuteFilePath)) {
-            String header = reader.readLine(); // Read and ignore the header
-            if (header == null) return "Error: The input data file is empty.";
-
-            String line;
-            while ((line = reader.readLine()) != null) {
-                LocalDateTime currentTimestamp;
-                try {
-                    currentTimestamp = parseTimestampFromLine(line);
-                } catch (Exception e) {
-                    return "Error: Malformed CSV line: \"" + line + "\".";
-                }
-
-                // Check if it's an intermediate entry (not on the hour)
-                if (currentTimestamp.getMinute() != 0 || currentTimestamp.getSecond() != 0) {
-                    hasIntermediateData = true;
-                } else {
-                    // This is an hourly entry
-                    if (previousTimestamp != null && !previousTimestamp.plusHours(1).equals(currentTimestamp)) {
-                        // Ensure no gap exists on an hour when there is hourly data
-                        LocalDateTime expectedTimestamp = previousTimestamp.plusHours(1);
-                        if (hourlyTimestamps.contains(expectedTimestamp)) {
-                            throw new IllegalStateException("Error: Gap detected for timestamp where hourly data exists! Expected: "
-                                    + expectedTimestamp + ", Found: " + currentTimestamp + ".");
-                        }
-                    }
-                    previousTimestamp = currentTimestamp;
-                }
-            }
-
-            if (previousTimestamp == null) {
-                return "Error: No valid hourly entries were found in the file.";
-            }
+        // Determine the range of timestamps covered by the minute file
+        if (minuteTimestamps.isEmpty()) {
+            return "No minute-level data found, skipping validation.";
         }
 
-        if (!hasIntermediateData) {
-            return "Error: No intermediate (non-hourly) data entries found in the file.";
+        LocalDateTime minMinuteTimestamp = minuteTimestamps.stream().min(LocalDateTime::compareTo).orElseThrow();
+        LocalDateTime maxMinuteTimestamp = minuteTimestamps.stream().max(LocalDateTime::compareTo).orElseThrow();
+
+        // Load hourly timestamps and check only those within the range of the minute file
+        Set<LocalDateTime> hourlyTimestamps = loadHourlyTimestamps(hourlyFilePath);
+        for (LocalDateTime hourlyTimestamp : hourlyTimestamps) {
+            if (hourlyTimestamp.isBefore(minMinuteTimestamp) || hourlyTimestamp.isAfter(maxMinuteTimestamp)) {
+                // Ignore timestamps outside the range of the minute file
+                continue;
+            }
+
+            if (hourlyTimestamp.getMinute() == 0 && hourlyTimestamp.getSecond() == 0) {
+                if (!minuteTimestamps.contains(hourlyTimestamp)) {
+                    long missingEpochSeconds = hourlyTimestamp.toEpochSecond(ZoneOffset.UTC);
+                    throw new IllegalStateException("Error: Hourly timestamp missing in minute-level data! " +
+                            "Missing Timestamp (UTC): " + hourlyTimestamp + " (Epoch: " + missingEpochSeconds + ").");
+                }
+            }
         }
 
         return "No issues found.";
     }
 
-    /**
-     * Loads all hourly timestamps from the hourly data file into a Set.
-     *
-     * @param hourlyFilePath Path to the hourly data file.
-     * @return A Set containing LocalDateTime objects for each parsed hourly timestamp.
-     * @throws IOException if reading the file fails.
-     */
     private Set<LocalDateTime> loadHourlyTimestamps(Path hourlyFilePath) throws IOException {
         Set<LocalDateTime> hourlyTimestamps = new HashSet<>();
 
         try (BufferedReader reader = Files.newBufferedReader(hourlyFilePath)) {
-            String header = reader.readLine(); // Read and ignore the header
+            String header = reader.readLine(); // Ignore the header
             if (header == null || !reader.ready()) {
                 throw new IllegalArgumentException("Error: Hourly data file is empty or malformed.");
             }
@@ -91,19 +67,32 @@ public class DataIntegrityChecker {
             String line;
             while ((line = reader.readLine()) != null) {
                 LocalDateTime timestamp = parseTimestampFromLine(line);
-                hourlyTimestamps.add(timestamp); // Add the parsed timestamp
+                hourlyTimestamps.add(timestamp);
             }
         }
 
         return hourlyTimestamps;
     }
 
-    /**
-     * Parses a timestamp from a CSV line.
-     *
-     * @param line A single line from the CSV file.
-     * @return The timestamp as a LocalDateTime.
-     */
+    private Set<LocalDateTime> loadMinuteTimestamps(Path minuteFilePath) throws IOException {
+        Set<LocalDateTime> minuteTimestamps = new HashSet<>();
+
+        try (BufferedReader reader = Files.newBufferedReader(minuteFilePath)) {
+            String header = reader.readLine(); // Ignore the header
+            if (header == null || !reader.ready()) {
+                throw new IllegalArgumentException("Error: Minute data file is empty or malformed.");
+            }
+
+            String line;
+            while ((line = reader.readLine()) != null) {
+                LocalDateTime timestamp = parseTimestampFromLine(line);
+                minuteTimestamps.add(timestamp);
+            }
+        }
+
+        return minuteTimestamps;
+    }
+
     private LocalDateTime parseTimestampFromLine(String line) {
         String[] parts = line.split(",");
         if (parts.length == 0) throw new IllegalArgumentException("Malformed CSV line: " + line);

@@ -42,7 +42,7 @@ class DataIntegrityCheckerTest {
         });
 
         // Verifying exception message
-        assertThat(exception.getMessage()).isEqualTo("Error: Gap detected for timestamp where hourly data exists! Expected: 2023-02-24T18:00, Found: 2023-02-24T19:00.");
+        assertThat(exception.getMessage()).isEqualTo("Error: Hourly timestamp missing in minute-level data! Missing Timestamp (UTC): 2023-02-24T18:00 (Epoch: 1677261600).");
     }
 
     @Test
@@ -71,35 +71,6 @@ class DataIntegrityCheckerTest {
 
         // Assert
         assertThat(result).isEqualTo("No issues found."); // Gaps allowed because hourly file doesn't have the missing entry.
-    }
-
-    @Test
-    void validateData_shouldDetectLackOfIntermediateData(@TempDir Path tempDir) throws IOException {
-        // Arrange: Create a file with only hourly entries and no intermediate data.
-        Path minuteFile = tempDir.resolve("only_hourly_entries.csv");
-        Path hourlyFile = tempDir.resolve("hourly_data.csv");
-
-        // Minute data has only hourly entries
-        Files.write(minuteFile, List.of(
-                "timestamp,open,high,low,close,volume",
-                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 0), 100, 105, 95, 102, 200),
-                formatEntry(LocalDateTime.of(2023, 2, 24, 18, 0), 105, 110, 100, 107, 250),
-                formatEntry(LocalDateTime.of(2023, 2, 24, 19, 0), 110, 115, 105, 112, 350)
-        ), StandardOpenOption.CREATE);
-
-        // Hourly data matches the minute data
-        Files.write(hourlyFile, List.of(
-                "timestamp,open,high,low,close,volume",
-                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 0), 100, 105, 95, 102, 200),
-                formatEntry(LocalDateTime.of(2023, 2, 24, 18, 0), 105, 110, 100, 107, 250),
-                formatEntry(LocalDateTime.of(2023, 2, 24, 19, 0), 110, 115, 105, 112, 350)
-        ), StandardOpenOption.CREATE);
-
-        // Act
-        String result = checker.validateDataIntegrity(minuteFile, hourlyFile);
-
-        // Assert
-        assertThat(result).isEqualTo("Error: No intermediate (non-hourly) data entries found in the file.");
     }
 
     @Test
