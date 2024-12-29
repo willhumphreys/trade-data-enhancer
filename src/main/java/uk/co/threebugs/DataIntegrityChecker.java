@@ -8,6 +8,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.HashSet;
+import java.util.Set;
 
 @Slf4j
 public class DataIntegrityChecker {
@@ -17,16 +19,18 @@ public class DataIntegrityChecker {
      * - No gaps between consecutive hourly entries.
      * - At least one intermediate data entry (not exactly on the hour).
      *
-     * @param filePath Path to the file to be checked.
      * @return A String describing the result of the check. "No issues found" if all checks pass,
      * otherwise a message detailing the problems detected.
      * @throws IOException if reading the file fails.
      */
-    public String validateDataIntegrity(Path filePath) throws IOException {
+    public String validateDataIntegrity(Path minuteFilePath, Path hourlyFilePath) throws IOException {
         boolean hasIntermediateData = false; // Tracks if we have any data that isn't on the hour
-        LocalDateTime previousHourlyTimestamp = null;
+        LocalDateTime previousTimestamp = null;
 
-        try (BufferedReader reader = Files.newBufferedReader(filePath)) {
+        // Load hourly timestamps from the hourly file
+        Set<LocalDateTime> hourlyTimestamps = loadHourlyTimestamps(hourlyFilePath);
+
+        try (BufferedReader reader = Files.newBufferedReader(minuteFilePath)) {
             String header = reader.readLine(); // Read and ignore the header
             if (header == null) return "Error: The input data file is empty.";
 
@@ -39,19 +43,24 @@ public class DataIntegrityChecker {
                     return "Error: Malformed CSV line: \"" + line + "\".";
                 }
 
+                // Check if it's an intermediate entry (not on the hour)
                 if (currentTimestamp.getMinute() != 0 || currentTimestamp.getSecond() != 0) {
-                    // Found an intermediate entry (not exactly at HH:00)
                     hasIntermediateData = true;
                 } else {
-                    // Process only hourly entries
-                    if (previousHourlyTimestamp != null && !previousHourlyTimestamp.plusHours(1).equals(currentTimestamp)) {
-                        return "Error: Gap detected! Expected: " + previousHourlyTimestamp.plusHours(1) + ", Found: " + currentTimestamp + ".";
+                    // This is an hourly entry
+                    if (previousTimestamp != null && !previousTimestamp.plusHours(1).equals(currentTimestamp)) {
+                        // Ensure no gap exists on an hour where there is hourly data
+                        LocalDateTime expectedTimestamp = previousTimestamp.plusHours(1);
+                        if (hourlyTimestamps.contains(expectedTimestamp)) {
+                            throw new IllegalStateException("Error: Gap detected for timestamp where hourly data exists! Expected: "
+                                    + expectedTimestamp + ", Found: " + currentTimestamp + ".");
+                        }
                     }
-                    previousHourlyTimestamp = currentTimestamp; // Update hourly timestamp
+                    previousTimestamp = currentTimestamp;
                 }
             }
 
-            if (previousHourlyTimestamp == null) {
+            if (previousTimestamp == null) {
                 return "Error: No valid hourly entries were found in the file.";
             }
         }
@@ -61,6 +70,32 @@ public class DataIntegrityChecker {
         }
 
         return "No issues found.";
+    }
+
+    /**
+     * Loads all hourly timestamps from the hourly data file into a Set.
+     *
+     * @param hourlyFilePath Path to the hourly data file.
+     * @return A Set containing LocalDateTime objects for each parsed hourly timestamp.
+     * @throws IOException if reading the file fails.
+     */
+    private Set<LocalDateTime> loadHourlyTimestamps(Path hourlyFilePath) throws IOException {
+        Set<LocalDateTime> hourlyTimestamps = new HashSet<>();
+
+        try (BufferedReader reader = Files.newBufferedReader(hourlyFilePath)) {
+            String header = reader.readLine(); // Read and ignore the header
+            if (header == null || !reader.ready()) {
+                throw new IllegalArgumentException("Error: Hourly data file is empty or malformed.");
+            }
+
+            String line;
+            while ((line = reader.readLine()) != null) {
+                LocalDateTime timestamp = parseTimestampFromLine(line);
+                hourlyTimestamps.add(timestamp); // Add the parsed timestamp
+            }
+        }
+
+        return hourlyTimestamps;
     }
 
     /**

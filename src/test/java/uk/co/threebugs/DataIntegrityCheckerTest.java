@@ -17,56 +17,118 @@ class DataIntegrityCheckerTest {
 
     private final DataIntegrityChecker checker = new DataIntegrityChecker();
 
-
     @Test
-    void checkForNoGaps_shouldReturnTrueForDataWithInBetweenEntries(@TempDir Path tempDir) throws IOException {
-        Path file = tempDir.resolve("data_with_in_between_entries.csv");
+    void validateData_shouldDetectGapForMissingHourlyEntryInHourlyFile(@TempDir Path tempDir) throws IOException {
+        // Arrange: Create a file with a gap that corresponds to an entry in the hourly data file.
+        Path minuteFile = tempDir.resolve("minute_with_gap.csv");
+        Path hourlyFile = tempDir.resolve("hourly_data.csv");
 
-        Files.write(file, List.of(
+        // Minute data file has a gap at 18:00
+        Files.write(minuteFile, List.of(
                 "timestamp,open,high,low,close,volume",
-                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 0), 100, 105, 95, 102, 200),  // Hourly valid
-                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 30), 102, 106, 96, 103, 210), // Extra data (shouldn't affect)
-                formatEntry(LocalDateTime.of(2023, 2, 24, 18, 0), 105, 110, 100, 107, 250), // Hourly valid
-                formatEntry(LocalDateTime.of(2023, 2, 24, 18, 45), 107, 111, 101, 108, 260), // More extra data (shouldn't affect)
-                formatEntry(LocalDateTime.of(2023, 2, 24, 19, 0), 110, 115, 105, 112, 300)  // Hourly valid
+                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 0), 100, 105, 95, 102, 200),
+                formatEntry(LocalDateTime.of(2023, 2, 24, 19, 0), 110, 115, 100, 112, 350)
         ), StandardOpenOption.CREATE);
 
-        String noGaps = checker.validateDataIntegrity(file);
+        // Hourly data includes 18:00
+        Files.write(hourlyFile, List.of(
+                "timestamp,open,high,low,close,volume",
+                formatEntry(LocalDateTime.of(2023, 2, 24, 18, 0), 105, 110, 100, 107, 250)
+        ), StandardOpenOption.CREATE);
 
-        assertThat(noGaps).isEqualTo("No issues found."); // No gaps, hourly entries are intact.
+        // Act
+        String result = checker.validateDataIntegrity(minuteFile, hourlyFile);
+
+        // Assert
+        assertThat(result).isEqualTo("Error: Gap detected for timestamp where hourly data exists! Expected: 2023-02-24T18:00, Found: 2023-02-24T19:00.");
     }
 
     @Test
-    void checkForNoGaps_shouldReturnFalseIfHourlyEntryIsMissingWithInBetweenData(@TempDir Path tempDir) throws IOException {
-        Path file = tempDir.resolve("data_with_missing_hourly_entry_and_in_between_data.csv");
+    void validateData_shouldAllowGapWhenNoHourlyEntryExistsInHourlyFile(@TempDir Path tempDir) throws IOException {
+        // Arrange: Create a file with a gap that doesn't correspond to any entry in the hourly data file.
+        Path minuteFile = tempDir.resolve("minute_with_allowed_gap.csv");
+        Path hourlyFile = tempDir.resolve("hourly_data.csv");
 
-        Files.write(file, List.of(
+        // Minute data file has a gap at 18:00
+        Files.write(minuteFile, List.of(
                 "timestamp,open,high,low,close,volume",
-                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 0), 100, 105, 95, 102, 200),  // Hourly valid
-                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 45), 102, 106, 96, 103, 210), // Extra data
-                formatEntry(LocalDateTime.of(2023, 2, 24, 19, 0), 110, 115, 105, 112, 300)  // Hourly valid
-                // Missing 2023-02-24 18:00 entry
+                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 0), 100, 105, 95, 102, 200),
+                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 1), 100, 105, 95, 102, 200),
+                formatEntry(LocalDateTime.of(2023, 2, 24, 19, 0), 110, 115, 100, 112, 350)
         ), StandardOpenOption.CREATE);
 
-        String noGaps = checker.validateDataIntegrity(file);
+        // Hourly data does not include 18:00
+        Files.write(hourlyFile, List.of(
+                "timestamp,open,high,low,close,volume",
+                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 0), 100, 105, 95, 102, 200),
+                formatEntry(LocalDateTime.of(2023, 2, 24, 19, 0), 110, 115, 100, 112, 350)
+        ), StandardOpenOption.CREATE);
 
-        assertThat(noGaps).isEqualTo("Error: Gap detected! Expected: 2023-02-24T18:00, Found: 2023-02-24T19:00."); // Gap detected at 18:00.
+        // Act
+        String result = checker.validateDataIntegrity(minuteFile, hourlyFile);
+
+        // Assert
+        assertThat(result).isEqualTo("No issues found."); // Gaps allowed because hourly file doesn't have the missing entry.
     }
 
     @Test
-    void checkForNoGaps_shouldReturnTrueWhenOnlyHourlyDataExists(@TempDir Path tempDir) throws IOException {
-        Path file = tempDir.resolve("only_hourly_data.csv");
+    void validateData_shouldDetectLackOfIntermediateData(@TempDir Path tempDir) throws IOException {
+        // Arrange: Create a file with only hourly entries and no intermediate data.
+        Path minuteFile = tempDir.resolve("only_hourly_entries.csv");
+        Path hourlyFile = tempDir.resolve("hourly_data.csv");
 
-        Files.write(file, List.of(
+        // Minute data has only hourly entries
+        Files.write(minuteFile, List.of(
                 "timestamp,open,high,low,close,volume",
-                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 0), 100, 105, 95, 102, 200),  // Hourly valid
-                formatEntry(LocalDateTime.of(2023, 2, 24, 18, 0), 105, 110, 100, 107, 250), // Hourly valid
-                formatEntry(LocalDateTime.of(2023, 2, 24, 19, 0), 110, 115, 105, 112, 300)  // Hourly valid
+                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 0), 100, 105, 95, 102, 200),
+                formatEntry(LocalDateTime.of(2023, 2, 24, 18, 0), 105, 110, 100, 107, 250),
+                formatEntry(LocalDateTime.of(2023, 2, 24, 19, 0), 110, 115, 105, 112, 350)
         ), StandardOpenOption.CREATE);
 
-        String noGaps = checker.validateDataIntegrity(file);
+        // Hourly data matches the minute data
+        Files.write(hourlyFile, List.of(
+                "timestamp,open,high,low,close,volume",
+                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 0), 100, 105, 95, 102, 200),
+                formatEntry(LocalDateTime.of(2023, 2, 24, 18, 0), 105, 110, 100, 107, 250),
+                formatEntry(LocalDateTime.of(2023, 2, 24, 19, 0), 110, 115, 105, 112, 350)
+        ), StandardOpenOption.CREATE);
 
-        assertThat(noGaps).isEqualTo("Error: No intermediate (non-hourly) data entries found in the file."); // No gaps, only hourly data is present.
+        // Act
+        String result = checker.validateDataIntegrity(minuteFile, hourlyFile);
+
+        // Assert
+        assertThat(result).isEqualTo("Error: No intermediate (non-hourly) data entries found in the file.");
+    }
+
+    @Test
+    void validateData_shouldPassWithIntermediateAndCompleteHourlyEntries(@TempDir Path tempDir) throws IOException {
+        // Arrange: Create a correct file with intermediate data and no gaps in hourly entries.
+        Path minuteFile = tempDir.resolve("valid_minute_data.csv");
+        Path hourlyFile = tempDir.resolve("hourly_data.csv");
+
+        // Minute data includes intermediate entries
+        Files.write(minuteFile, List.of(
+                "timestamp,open,high,low,close,volume",
+                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 0), 100, 105, 95, 102, 200), // Hourly valid
+                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 30), 102, 106, 96, 103, 210), // Intermediate entry
+                formatEntry(LocalDateTime.of(2023, 2, 24, 18, 0), 105, 110, 100, 107, 250), // Hourly valid
+                formatEntry(LocalDateTime.of(2023, 2, 24, 18, 45), 107, 111, 101, 108, 260), // Intermediate entry
+                formatEntry(LocalDateTime.of(2023, 2, 24, 19, 0), 110, 115, 105, 112, 350)  // Hourly valid
+        ), StandardOpenOption.CREATE);
+
+        // Hourly data matches the minute data
+        Files.write(hourlyFile, List.of(
+                "timestamp,open,high,low,close,volume",
+                formatEntry(LocalDateTime.of(2023, 2, 24, 17, 0), 100, 105, 95, 102, 200),
+                formatEntry(LocalDateTime.of(2023, 2, 24, 18, 0), 105, 110, 100, 107, 250),
+                formatEntry(LocalDateTime.of(2023, 2, 24, 19, 0), 110, 115, 105, 112, 350)
+        ), StandardOpenOption.CREATE);
+
+        // Act
+        String result = checker.validateDataIntegrity(minuteFile, hourlyFile);
+
+        // Assert
+        assertThat(result).isEqualTo("No issues found."); // Valid case, no errors expected.
     }
 
     /**

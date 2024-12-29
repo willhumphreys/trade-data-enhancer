@@ -12,10 +12,10 @@ import java.util.Objects;
 @Slf4j
 public class Main {
     public static void main(String[] args) {
-        // Create Apache Commons CLI options
         var options = new Options();
         options.addOption("w", "window", true, "ATR window size (e.g., 14 periods)");
-        options.addOption("f", "file", true, "File name for the data (e.g., btcusd_1-min_data.csv)");
+        options.addOption("f", "file", true, "Minute data file name (e.g., spx-1m-btmF.csv)");
+        options.addOption("h", "hourly", true, "Hourly data file name (e.g., spx-1h-btmF.csv)");
 
         CommandLineParser parser = new DefaultParser();
         CommandLine cmd;
@@ -23,124 +23,163 @@ public class Main {
         try {
             cmd = parser.parse(options, args);
 
-            // Parse ATR window size (-w or --window, defaults to 14)
-            var atrWindow = Integer.parseInt(cmd.getOptionValue("w", "14")); // Default to 14
-            // Parse data file name (-f or --file, defaults to btcusd_1-min_data.csv)
-            var dataFile = cmd.getOptionValue("f", "btcusd_1-min_data.csv");
+            // Parse ATR window size (default: 14 periods)
+            var atrWindow = Integer.parseInt(cmd.getOptionValue("w", "14"));
 
+            // File names for minute and hourly data
+            var minuteDataFile = cmd.getOptionValue("f", "spx-1m-btmF.csv");
+            var hourlyDataFile = cmd.getOptionValue("h", "spx-1h-btmF.csv");
+
+            // Define input/output directories
             var dataDirectory = Path.of("data");
             var inputDirectory = dataDirectory.resolve("input");
             var outputDirectory = dataDirectory.resolve("output");
 
             deleteAllFilesInDirectory(outputDirectory);
 
-            var inputPath = inputDirectory.resolve(dataFile);
+            // Prepare paths for data files
+            var minuteDataPath = inputDirectory.resolve(minuteDataFile);
+            var hourlyDataPath = inputDirectory.resolve(hourlyDataFile);
 
+            // Output paths for intermediate processing
+            var processedMinutePaths = new ProcessedPaths(minuteDataFile, outputDirectory);
+            var processedHourlyPaths = new ProcessedPaths(hourlyDataFile, outputDirectory);
 
-            var validatedPath = outputDirectory.resolve("1_validated_" + dataFile);
-            var invalidPath = outputDirectory.resolve("1_invalid_" + dataFile);
-            var decimalShiftedPath = outputDirectory.resolve("2_decimal_shifted_" + dataFile);
-            var hourlyCheckedPath = outputDirectory.resolve("3_checked_" + dataFile);
-            var atrOutputPath = outputDirectory.resolve("4_atr_" + dataFile);
-            var timeStampOutputPath = outputDirectory.resolve("5_formatted_" + dataFile);
-            var nameAppendedPath = outputDirectory.resolve("6_with_name_" + dataFile);
-            var finalOutputWithWeightingPath = outputDirectory.resolve("7_weighted_" + dataFile);
-            var newHourPath = outputDirectory.resolve("8_new_hour_" + dataFile);
-            var fixedLowHighPath = outputDirectory.resolve("9_fixed_low_high_" + dataFile);
+            log.info("Starting data processing for Minute Data: {} and Hourly Data: {}", minuteDataFile, hourlyDataFile);
 
-            log.info("Processing data from {}", inputPath);
+            // Process hourly data (validation, decimal shift, and timestamp check)
+            processHourlyData(hourlyDataPath, processedHourlyPaths);
 
-            try {
-                // Step 1: Validate the data
-                var validator = new DataValidator();
-                validator.validateDataFile(inputPath, validatedPath, invalidPath);
+            // Process minute data (validation, decimal shift, and timestamp check)
+            processMinuteData(minuteDataPath, processedMinutePaths);
 
-                log.info("Data validated.");
+            // Combine hourly and minute data for integrity check
+            performDataIntegrityCheck(processedMinutePaths.decimalShifted, processedHourlyPaths.decimalShifted, processedMinutePaths.hourlyChecked);
 
-                // Step 2: Shift decimals to integers
-                var decimalShifter = new DecimalShifter();
-                decimalShifter.shiftDecimalPlaces(validatedPath, decimalShiftedPath);
-
-                log.info("Decimal values shifted to integers.");
-
-                // Step 2a: Check if timestamps are in correct order
-                var timestampOrderChecker = new TimestampOrderChecker();
-                try {
-                    timestampOrderChecker.checkTimestampOrder(decimalShiftedPath);
-                    log.info("Timestamps are in correct order.");
-                } catch (IllegalStateException e) {
-                    log.error("Timestamps are not in order: {}", e.getMessage());
-                    throw e; // Terminate execution if timestamps are out of order
-                }
-
-                // Step 3: Ensure hourly entries (streaming processing)
-                var hourlyChecker = new HourlyDataChecker();
-                hourlyChecker.ensureHourlyEntries(decimalShiftedPath, hourlyCheckedPath);
-
-                log.info("Hourly entries checked.");
-
-                // Step 3a: Verify data integrity (no missing hourly entries)
-                var integrityChecker = new DataIntegrityChecker();
-                String noGaps = integrityChecker.validateDataIntegrity(hourlyCheckedPath);
-
-                if (!Objects.equals(noGaps, "No issues found.")) {
-                    log.error("Data integrity check failed! {}", noGaps);
-                    throw new IllegalStateException("Data integrity check failed! %s".formatted(noGaps));
-                } else {
-                    log.info("Data integrity check passed. No gaps detected.");
-                }
-
-
-                // Step 4: Append ATR values
-                var reader = new BitcoinMinuteDataReader();
-                var checkedData = reader.readFile(hourlyCheckedPath);
-                new ATRAppender().appendATR(checkedData, atrWindow, atrOutputPath);
-
-                // Step 5: Fix date formatting
-                var timestampFormatter = new TimestampFormatter();
-                timestampFormatter.reformatTimestamps(atrOutputPath, timeStampOutputPath);
-
-                // Step 6: Add file name as a column
-                var fileNameAppender = new FileNameAppender();
-                String fileNameWithoutExtension = dataFile.substring(0, dataFile.lastIndexOf('.'));
-                fileNameAppender.addFileNameColumn(timeStampOutputPath, nameAppendedPath, fileNameWithoutExtension);
-
-                log.info("File name column added. Final output written to {}", nameAppendedPath);
-
-                // Step 7: Add weighting column
-                var weightingAdder = new WeightingColumnAppender();
-
-                weightingAdder.addWeightingColumn(nameAppendedPath, finalOutputWithWeightingPath);
-
-                log.info("Weighting column added. Final output written to {}", finalOutputWithWeightingPath);
-
-                // Add the 'newHour' column
-                var newHourAdder = new NewHourColumnAdder();
-                newHourAdder.addNewHourColumn(finalOutputWithWeightingPath, newHourPath);
-
-                var lowHighAdjuster = new LowHighColumnAdder();
-                lowHighAdjuster.addFixedLowAndHighColumns(newHourPath, fixedLowHighPath);
-
-                log.info("Added 'fixedLow' and 'fixedHigh' columns. Final output written to {}", fixedLowHighPath);
-
-                var mapTimePath = outputDirectory.resolve("10_map_time_" + dataFile);
-
-                var mapTimeAdder = new MapTimeColumnAdder();
-                mapTimeAdder.addMapTimeColumnAndCheckHourlyTrades(fixedLowHighPath, mapTimePath);
-
-                log.info("Added 'mapTime' column. Final output written to {}", mapTimePath);
-
-            } catch (IOException e) {
-                log.error("Error during processing: {}", e.getMessage());
-            }
+            // Additional processing for ATR and formatting
+            performAdditionalProcessing(processedMinutePaths.hourlyChecked, processedMinutePaths, atrWindow);
 
         } catch (ParseException e) {
             log.error("Error parsing command line arguments: {}", e.getMessage());
-
-            // Print usage help
-            var formatter = new HelpFormatter();
-            formatter.printHelp("Main", options);
+            new HelpFormatter().printHelp("Main", options);
+        } catch (Exception e) {
+            log.error("Unexpected error: {}", e.getMessage());
         }
+    }
+
+    private static void processHourlyData(Path hourlyDataPath, ProcessedPaths paths) throws IOException {
+        log.info("Processing hourly data...");
+
+        var validator = new DataValidator();
+        var decimalShifter = new DecimalShifter();
+        var timestampOrderChecker = new TimestampOrderChecker();
+
+        // Step 1: Validate hourly data
+        validator.validateDataFile(hourlyDataPath, paths.validated, paths.invalid);
+        log.info("Hourly data validated.");
+
+        // Step 2: Decimal shift
+        decimalShifter.shiftDecimalPlaces(paths.validated, paths.decimalShifted);
+        log.info("Hourly data decimal values shifted.");
+
+        // Step 3: Verify timestamps are in order
+        try {
+            timestampOrderChecker.checkTimestampOrder(paths.decimalShifted);
+            log.info("Hourly timestamps verified to be in correct order.");
+        } catch (IllegalStateException e) {
+            log.error("Hourly data timestamps are not in order: {}", e.getMessage());
+            throw e;
+        }
+    }
+
+    private static void processMinuteData(Path minuteDataPath, ProcessedPaths paths) throws IOException {
+        log.info("Processing minute data...");
+
+        var validator = new DataValidator();
+        var decimalShifter = new DecimalShifter();
+        var timestampOrderChecker = new TimestampOrderChecker();
+
+        // Step 1: Validate minute data
+        validator.validateDataFile(minuteDataPath, paths.validated, paths.invalid);
+        log.info("Minute data validated.");
+
+        // Step 2: Decimal shift
+        decimalShifter.shiftDecimalPlaces(paths.validated, paths.decimalShifted);
+        log.info("Minute data decimal values shifted.");
+
+        // Step 3: Verify timestamps are in order
+        try {
+            timestampOrderChecker.checkTimestampOrder(paths.decimalShifted);
+            log.info("Minute timestamps verified to be in correct order.");
+        } catch (IllegalStateException e) {
+            log.error("Minute data timestamps are not in order: {}", e.getMessage());
+            throw e;
+        }
+    }
+
+    private static void performDataIntegrityCheck(Path minuteData, Path hourlyData, Path hourlyChecked) throws IOException {
+        log.info("Performing data integrity check...");
+
+        var hourlyChecker = new HourlyDataChecker();
+
+        // Step 1: Ensure hourly entries exist in minute data
+        int hourlyEntries = hourlyChecker.ensureHourlyEntries(minuteData, hourlyData, hourlyChecked);
+        log.info("Inserted hours: {}", hourlyEntries);
+
+        // Step 2: Validate data integrity
+        var integrityChecker = new DataIntegrityChecker();
+        String integrityResult = integrityChecker.validateDataIntegrity(minuteData, hourlyChecked);
+
+        if (!Objects.equals(integrityResult, "No issues found.")) {
+            log.error("Data integrity check failed! {}", integrityResult);
+            throw new IllegalStateException("Data integrity check failed! " + integrityResult);
+        }
+        log.info("Data integrity check passed.");
+    }
+
+    private static void performAdditionalProcessing(Path finalMinuteData, ProcessedPaths paths, int atrWindow) throws IOException {
+        log.info("Performing additional processing steps...");
+
+        // Step 4: Append ATR values
+        var reader = new BitcoinMinuteDataReader();
+        var checkedData = reader.readFile(finalMinuteData);
+        new ATRAppender().appendATR(checkedData, atrWindow, paths.atrOutput);
+        log.info("ATR values appended.");
+
+        // Step 5: Fix date formatting
+        var timestampFormatter = new TimestampFormatter();
+        timestampFormatter.reformatTimestamps(paths.atrOutput, paths.timeStampFormatted);
+        log.info("Timestamps reformatted.");
+
+        // Step 6: Add file name as a column
+        var fileNameAppender = new FileNameAppender();
+        String fileNameWithoutExtension = paths.fileName.substring(0, paths.fileName.lastIndexOf('.'));
+        fileNameAppender.addFileNameColumn(paths.timeStampFormatted, paths.nameAppended, fileNameWithoutExtension);
+        log.info("File name column added.");
+
+        // Step 7: Add weighting column
+        var weightingAdder = new WeightingColumnAppender();
+        var weightedOutputPath = paths.hourlyChecked.getParent().resolve("7_weighted_" + paths.fileName);
+        weightingAdder.addWeightingColumn(paths.nameAppended, weightedOutputPath);
+        log.info("Weighting column added. Output written to {}", weightedOutputPath);
+
+        // Step 8: Add the 'newHour' column
+        var newHourAdder = new NewHourColumnAdder();
+        Path newHourPath = weightedOutputPath.getParent().resolve("8_new_hour_" + paths.fileName);
+        newHourAdder.addNewHourColumn(weightedOutputPath, newHourPath);
+        log.info("Added 'newHour' column. Output written to {}", newHourPath);
+
+        // Step 9: Fix 'low' and 'high' columns
+        var lowHighAdjuster = new LowHighColumnAdder();
+        Path fixedLowHighPath = newHourPath.getParent().resolve("9_fixed_low_high_" + paths.fileName);
+        lowHighAdjuster.addFixedLowAndHighColumns(newHourPath, fixedLowHighPath);
+        log.info("Fixed 'low' and 'high' columns. Output written to {}", fixedLowHighPath);
+
+        // Step 10: Add 'mapTime' column and check hourly trades (if necessary)
+        var mapTimeAdder = new MapTimeColumnAdder();
+        Path mapTimePath = fixedLowHighPath.getParent().resolve("10_map_time_" + paths.fileName);
+        mapTimeAdder.addMapTimeColumnAndCheckHourlyTrades(fixedLowHighPath, mapTimePath);
+        log.info("Added 'mapTime' column. Final output written to {}", mapTimePath);
     }
 
     private static void deleteAllFilesInDirectory(Path directory) {
@@ -152,5 +191,30 @@ public class Main {
         } catch (IOException e) {
             log.error("Failed to delete files in directory {}: {}", directory, e.getMessage());
         }
+    }
+}
+
+/**
+ * Helper class to manage file paths during different stages of processing.
+ */
+class ProcessedPaths {
+    final String fileName;
+    final Path validated;
+    final Path invalid;
+    final Path decimalShifted;
+    final Path hourlyChecked;
+    final Path atrOutput;
+    final Path timeStampFormatted;
+    final Path nameAppended;
+
+    ProcessedPaths(String fileName, Path outputDirectory) {
+        this.fileName = fileName;
+        this.validated = outputDirectory.resolve("1_validated_" + fileName);
+        this.invalid = outputDirectory.resolve("1_invalid_" + fileName);
+        this.decimalShifted = outputDirectory.resolve("2_decimal_shifted_" + fileName);
+        this.hourlyChecked = outputDirectory.resolve("3_checked_" + fileName);
+        this.atrOutput = outputDirectory.resolve("4_atr_" + fileName);
+        this.timeStampFormatted = outputDirectory.resolve("5_formatted_" + fileName);
+        this.nameAppended = outputDirectory.resolve("6_with_name_" + fileName);
     }
 }
