@@ -178,6 +178,22 @@ public class Main {
         Path mapTimePath = fixedLowHighPath.getParent().resolve("10_map_time_" + paths.fileName);
         mapTimeAdder.addMapTimeColumnAndCheckHourlyTrades(fixedLowHighPath, mapTimePath);
         log.info("Added 'mapTime' column. Final output written to {}", mapTimePath);
+
+        // Step 11: Add missing hourly rows
+        Path missingHourlyPath = mapTimePath.getParent().resolve("11_missing_hourly_" + paths.fileName);
+        addMissingHourlyRows(mapTimePath, missingHourlyPath);
+        log.info("Added missing hourly rows. Final output written to {}", missingHourlyPath);
+
+        var missingHourValidator = new MissingHourValidator();
+
+        try {
+            missingHourValidator.validateHourlyRecords(missingHourlyPath);
+            log.info("No missing hourly records found.");
+        } catch (IllegalStateException e) {
+            log.error("Validation failed! Missing hourly records: {}", e.getMessage());
+            throw e;
+        }
+
     }
 
     private static void deleteAllFilesInDirectory(Path directory) {
@@ -189,6 +205,20 @@ public class Main {
         } catch (IOException e) {
             log.error("Failed to delete files in directory {}: {}", directory, e.getMessage());
         }
+    }
+
+    /**
+     * Adds missing hourly rows to the processed data, with holiday column and mapTime adjustments.
+     *
+     * @param inputPath  The path to the current processed file.
+     * @param outputPath The path to write the file with missing hourly rows added.
+     * @throws IOException If there are errors during file processing.
+     */
+    private static void addMissingHourlyRows(Path inputPath, Path outputPath) throws IOException {
+        log.info("Adding missing hourly rows...");
+
+        var missingHourAdder = new MissingHourAdder(); // Create instance of the MissingHourAdder utility
+        missingHourAdder.addMissingHours(inputPath, outputPath); // Execute the missing row addition
     }
 }
 
