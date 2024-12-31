@@ -12,11 +12,12 @@ public class MissingHourValidator {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
 
     /**
-     * Validates that there are no missing hourly records in the file.
+     * Validates that there are no missing hourly records in the file while allowing in-between minute ticks.
+     * Does not expect hourly ticks prior to the first tick.
      *
      * @param filePath Path to the file to be validated.
      * @throws IOException           If an error occurs during file processing.
-     * @throws IllegalStateException If any hourly records are missing.
+     * @throws IllegalStateException If any hourly ticks are missing.
      */
     public void validateHourlyRecords(Path filePath) throws IOException {
         List<String> lines = Files.readAllLines(filePath);
@@ -25,29 +26,47 @@ public class MissingHourValidator {
             throw new IllegalStateException("File is empty, cannot validate hourly records.");
         }
 
-        // Skip the header
-        String previousTimestamp = null;
+        // Skip the header row
+        boolean hasHourTick = true; // Track if HH:00 tick exists for the current hour
+        LocalDateTime currentHour = null; // The current hour being processed
 
-        for (int i = 1; i < lines.size(); i++) { // Skip the header (start from 1)
+        for (int i = 1; i < lines.size(); i++) { // Start after the header
             String[] row = lines.get(i).split(",");
+            String timestamp = row[0].trim();
+            LocalDateTime tickDateTime = LocalDateTime.parse(timestamp, DATE_TIME_FORMATTER);
 
-            String currentTimestamp = row[0].trim();
-            LocalDateTime currentDateTime = LocalDateTime.parse(currentTimestamp, DATE_TIME_FORMATTER);
+            // Align tickDateTime to the start of the hour (HH:00)
+            LocalDateTime tickHour = tickDateTime.withMinute(0).withSecond(0);
 
-            if (previousTimestamp != null) {
-                LocalDateTime previousDateTime = LocalDateTime.parse(previousTimestamp, DATE_TIME_FORMATTER);
-
-                // Check for missing hours
-                if (!previousDateTime.plusHours(1).equals(currentDateTime)) {
+            // First tick initialization
+            if (currentHour == null) {
+                currentHour = tickHour; // Define the start of validation based on the first tick
+            } else if (!tickHour.equals(currentHour)) {
+                // A new hour has started, validate the previous hour
+                if (!hasHourTick) {
                     throw new IllegalStateException(String.format(
-                            "Missing hourly record between %s and %s.",
-                            previousDateTime.format(DATE_TIME_FORMATTER),
-                            currentDateTime.format(DATE_TIME_FORMATTER)
+                            "Missing tick for the hour starting at %s.",
+                            currentHour.format(DATE_TIME_FORMATTER)
                     ));
                 }
+
+                hasHourTick = false;
+                currentHour = tickHour; // Update to the new hour
             }
 
-            previousTimestamp = currentTimestamp;
+            if (tickDateTime.equals(tickHour)) {
+                hasHourTick = true; // Mark that HH:00 tick exists for this hour
+            }
         }
+
+        // Validate the final hour (if the file ends mid-hour, check if HH:00 existed)
+        if (!hasHourTick) {
+            throw new IllegalStateException(String.format(
+                    "Missing tick for the hour starting at %s.",
+                    currentHour.format(DATE_TIME_FORMATTER)
+            ));
+        }
+
+        // Validation passed
     }
 }
