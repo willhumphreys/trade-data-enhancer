@@ -17,10 +17,7 @@ public class MissingHourAdder {
      * @throws IOException If reading or writing fails.
      */
     public void addMissingHours(Path inputPath, Path outputPath) throws IOException {
-        try (
-                BufferedReader reader = new BufferedReader(new FileReader(inputPath.toFile()));
-                BufferedWriter writer = new BufferedWriter(new FileWriter(outputPath.toFile()))
-        ) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(inputPath.toFile())); BufferedWriter writer = new BufferedWriter(new FileWriter(outputPath.toFile()))) {
             String header = reader.readLine(); // Read the header
             if (header == null) {
                 throw new IOException("Input file is empty.");
@@ -83,8 +80,8 @@ public class MissingHourAdder {
     /**
      * Creates a holiday hourly row with most fields set to -1 for the missing hour.
      *
-     * @param header      The headers of the CSV file.
-     * @param dateTime    The missing hour timestamp.
+     * @param header       The headers of the CSV file.
+     * @param dateTime     The missing hour timestamp.
      * @param referenceRow A reference row to match the structure for other fields.
      * @return A holiday row as a String.
      */
@@ -100,6 +97,8 @@ public class MissingHourAdder {
             } else if ("name".equals(headers[i])) {
                 // Use the 'name' field from the reference row
                 newRow.append(referenceFields[getIndex(header, "name")]);
+            } else if ("newHour".equals(headers[i])) {
+                newRow.append("true");
             } else {
                 // Set all other fields to -1
                 newRow.append("-1");

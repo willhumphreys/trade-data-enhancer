@@ -100,7 +100,7 @@ public class ATRAppender {
         previousCloses.add(minuteData.close());
 
         // Calculate ATR once we have enough data for the window size
-        double atr = 0.0;
+        double atr = -1;
         if (previousCloses.size() >= atrWindow) {
             atrValues.add(tr); // Add TR to ATR calculation
 
