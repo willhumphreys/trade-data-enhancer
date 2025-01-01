@@ -15,7 +15,14 @@ public class DecimalShifter {
 
     private static final String[] TARGET_COLUMNS = {"Open", "High", "Low", "Close"};
 
-    public void shiftDecimalPlaces(Path inputPath, Path outputPath) {
+    /**
+     * Shifts decimal places and returns the number of places shifted.
+     *
+     * @param inputPath  Path to the input file.
+     * @param outputPath Path to the output file with adjusted decimals.
+     * @return Number of decimal places the data was shifted.
+     */
+    public int shiftDecimalPlaces(Path inputPath, Path outputPath) {
         try (var reader = Files.newBufferedReader(inputPath);
              var writer = Files.newBufferedWriter(outputPath)) {
 
@@ -37,7 +44,7 @@ public class DecimalShifter {
             int maxDecimalPlaces = calculateMaxDecimalPlaces(reader, columnIndices);
             log.info("Maximum decimal places found: {}", maxDecimalPlaces);
 
-            // Shift decimal places and write updated rows to output
+            // Shift decimal places and write updated rows into the output file
             reader.close(); // Reset reader
             try (var refreshedReader = Files.newBufferedReader(inputPath)) {
                 refreshedReader.readLine(); // Skip header
@@ -50,6 +57,7 @@ public class DecimalShifter {
             }
 
             log.info("Decimal shift completed successfully. Output written to: {}", outputPath);
+            return maxDecimalPlaces; // Return the number of decimal places shifted
 
         } catch (IOException e) {
             log.error("Error processing file: {}", e.getMessage());
@@ -109,5 +117,47 @@ public class DecimalShifter {
             }
         }
         return String.join(",", columns);
+    }
+
+    /**
+     * Adjusts decimal places in the input file using a predefined shift value.
+     *
+     * @param inputPath    Path to the input file.
+     * @param outputPath   Path to the output file with adjusted decimals.
+     * @param decimalShift Predefined shift value (number of decimal places to shift).
+     */
+    public void shiftDecimalPlacesWithPredefinedShift(Path inputPath, Path outputPath, int decimalShift) {
+        try (var reader = Files.newBufferedReader(inputPath);
+             var writer = Files.newBufferedWriter(outputPath)) {
+
+            log.info("Shifting decimal places using predefined value: {}.", decimalShift);
+
+            // Read the header row
+            var header = reader.readLine();
+            if (header == null || header.isEmpty()) {
+                throw new IOException("The input file is empty or has no header.");
+            }
+
+            writer.write(header);
+            writer.newLine();
+
+            // Determine target columns for shifting
+            var columnIndices = findTargetColumnIndices(header);
+            log.info("Located column indices for predefined shift: {}", Arrays.toString(columnIndices));
+
+            // Apply the predefined decimal shift to all rows
+            String line;
+            while ((line = reader.readLine()) != null) {
+                var updatedLine = shiftRow(line, columnIndices, decimalShift);
+                writer.write(updatedLine);
+                writer.newLine();
+            }
+
+            log.info("Decimal adjustment completed successfully. Output written to: {}", outputPath);
+
+        } catch (IOException e) {
+            log.error("Error processing file: {}", e.getMessage());
+            throw new RuntimeException(e);
+        }
     }
 }

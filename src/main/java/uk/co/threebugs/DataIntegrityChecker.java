@@ -61,7 +61,7 @@ public class DataIntegrityChecker {
         try (BufferedReader reader = Files.newBufferedReader(hourlyFilePath)) {
             String header = reader.readLine(); // Ignore the header
             if (header == null || !reader.ready()) {
-                throw new IllegalArgumentException("Error: Hourly data file is empty or malformed.");
+                throw new IllegalArgumentException("Error: Hourly data file is empty or malformed. " + hourlyFilePath);
             }
 
             String line;

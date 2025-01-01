@@ -27,8 +27,8 @@ public class Main {
             var atrWindow = Integer.parseInt(cmd.getOptionValue("w", "14"));
 
             // File names for minute and hourly data
-            var minuteDataFile = cmd.getOptionValue("f", "spx-1m-btmF.csv");
-            var hourlyDataFile = cmd.getOptionValue("h", "spx-1h-btmF.csv");
+            var minuteDataFile = cmd.getOptionValue("f", "btcusd_1-min_data.csv");
+            var hourlyDataFile = cmd.getOptionValue("h", "btcusd_1-hour_data.csv");
 
             // Define input/output directories
             var dataDirectory = Path.of("data");
@@ -41,17 +41,25 @@ public class Main {
             var minuteDataPath = inputDirectory.resolve(minuteDataFile);
             var hourlyDataPath = inputDirectory.resolve(hourlyDataFile);
 
+            // Check if the hourly file exists
+            if (Files.notExists(hourlyDataPath)) {
+                log.info("Hourly file '{}' not found. Generating it from the minute file '{}'.", hourlyDataFile, minuteDataFile);
+
+                new HourlyFileGenerator().generateHourlyFileFromMinuteFile(minuteDataPath, hourlyDataPath);
+            }
+
             // Output paths for intermediate processing
             var processedMinutePaths = new ProcessedPaths(minuteDataFile, outputDirectory);
             var processedHourlyPaths = new ProcessedPaths(hourlyDataFile, outputDirectory);
 
             log.info("Starting data processing for Minute Data: {} and Hourly Data: {}", minuteDataFile, hourlyDataFile);
 
+            // Process minute data (validation, decimal shift, and timestamp check)
+            processMinuteData(minuteDataPath, processedMinutePaths);
+
             // Process hourly data (validation, decimal shift, and timestamp check)
             processHourlyData(hourlyDataPath, processedHourlyPaths);
 
-            // Process minute data (validation, decimal shift, and timestamp check)
-            processMinuteData(minuteDataPath, processedMinutePaths);
 
             // Combine hourly and minute data for integrity check
             performDataIntegrityCheck(processedMinutePaths.decimalShifted, processedHourlyPaths.decimalShifted, processedMinutePaths.hourlyChecked);
@@ -76,9 +84,19 @@ public class Main {
         validator.validateDataFile(hourlyDataPath, paths.validated, paths.invalid);
         log.info("Hourly data validated.");
 
-        // Step 2: Decimal shift
-        decimalShifter.shiftDecimalPlaces(paths.validated, paths.decimalShifted);
-        log.info("Hourly data decimal values shifted.");
+        // Step 2: Decimal shift (reuse shift value)
+        Path shiftValuePath = paths.validated.getParent().resolve("decimal_shift_value.txt");
+        if (!Files.exists(shiftValuePath)) {
+            throw new IOException("Decimal shift value file not found. Ensure minute data is processed first.");
+        }
+
+        // Read previously determined decimal shift value
+        int decimalShift = Integer.parseInt(Files.readString(shiftValuePath).trim());
+        log.info("Using previously determined decimal shift value: {}", decimalShift);
+
+        // Shift decimal places for the hourly data using the predefined shift value
+        decimalShifter.shiftDecimalPlacesWithPredefinedShift(paths.validated, paths.decimalShifted, decimalShift);
+        log.info("Hourly data decimal values adjusted using predefined shift value: {}.", decimalShift);
 
         // Step 3: Verify timestamps are in order
         try {
@@ -89,6 +107,7 @@ public class Main {
             throw e;
         }
     }
+
 
     private static void processMinuteData(Path minuteDataPath, ProcessedPaths paths) throws IOException {
         log.info("Processing minute data...");
@@ -101,9 +120,14 @@ public class Main {
         validator.validateDataFile(minuteDataPath, paths.validated, paths.invalid);
         log.info("Minute data validated.");
 
-        // Step 2: Decimal shift
-        decimalShifter.shiftDecimalPlaces(paths.validated, paths.decimalShifted);
-        log.info("Minute data decimal values shifted.");
+        // Step 2: Decimal shift (returns shift value)
+        int decimalShift = decimalShifter.shiftDecimalPlaces(paths.validated, paths.decimalShifted);
+        log.info("Minute data decimal values shifted by {} places.", decimalShift);
+
+        // Save the shift value for later use
+        try (var writer = Files.newBufferedWriter(paths.validated.getParent().resolve("decimal_shift_value.txt"))) {
+            writer.write(String.valueOf(decimalShift));
+        }
 
         // Step 3: Verify timestamps are in order
         try {
@@ -220,6 +244,7 @@ public class Main {
         var missingHourAdder = new MissingHourAdder(); // Create instance of the MissingHourAdder utility
         missingHourAdder.addMissingHours(inputPath, outputPath); // Execute the missing row addition
     }
+
 }
 
 /**
