@@ -29,11 +29,11 @@ public class Main {
             var atrWindow = Integer.parseInt(cmd.getOptionValue("w", String.valueOf(atrWindowDefault)));
 
             // File names for minute and hourly data
-//            var minuteDataFile = cmd.getOptionValue("f", "btcusd_1-min_data.csv");
-//            var hourlyDataFile = cmd.getOptionValue("h", "btcusd_1-hour_data.csv");
-
-            var minuteDataFile = cmd.getOptionValue("f", "spx-1m-btmF.csv");
-            var hourlyDataFile = cmd.getOptionValue("h", "spx-1h-btmF.csv");
+            var minuteDataFile = cmd.getOptionValue("f", "btcusd_1-min_data.csv");
+            var hourlyDataFile = cmd.getOptionValue("h", "btcusd_1-hour_data.csv");
+//
+//            var minuteDataFile = cmd.getOptionValue("f", "spx-1m-btmF.csv");
+//            var hourlyDataFile = cmd.getOptionValue("h", "spx-1h-btmF.csv");
 
 
             // Define input/output directories
@@ -107,8 +107,6 @@ public class Main {
         // Step 4: Append ATR values
         log.info("Appending ATR values to hourly data...");
         var atrAppender = new ATRAppender();
-        var reader = new BitcoinMinuteDataReader(); // Can be reused for reading hourly files
-
 
         var longReader = new BitcoinLongDataReader(); // New long value reader
 
