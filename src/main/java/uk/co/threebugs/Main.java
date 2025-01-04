@@ -29,8 +29,12 @@ public class Main {
             var atrWindow = Integer.parseInt(cmd.getOptionValue("w", String.valueOf(atrWindowDefault)));
 
             // File names for minute and hourly data
-            var minuteDataFile = cmd.getOptionValue("f", "btcusd_1-min_data.csv");
-            var hourlyDataFile = cmd.getOptionValue("h", "btcusd_1-hour_data.csv");
+//            var minuteDataFile = cmd.getOptionValue("f", "btcusd_1-min_data.csv");
+//            var hourlyDataFile = cmd.getOptionValue("h", "btcusd_1-hour_data.csv");
+
+            var minuteDataFile = cmd.getOptionValue("f", "spx-1m-btmF.csv");
+            var hourlyDataFile = cmd.getOptionValue("h", "spx-1h-btmF.csv");
+
 
             // Define input/output directories
             var dataDirectory = Path.of("data");
@@ -265,7 +269,9 @@ public class Main {
         log.info("Adding missing hourly rows...");
 
         var missingHourAdder = new MissingHourAdder(); // Create instance of the MissingHourAdder utility
-        missingHourAdder.addMissingHours(inputPath, outputPath); // Execute the missing row addition
+        long addedMissingHours = missingHourAdder.addMissingHours(inputPath, outputPath);// Execute the missing row addition
+
+        log.info("Added holiday hours {}", addedMissingHours);
     }
 
 }

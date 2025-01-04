@@ -1,5 +1,7 @@
 package uk.co.threebugs;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -7,6 +9,7 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+@Slf4j
 public class WeightingColumnAppender {
 
     public void addWeightingColumn(Path inputPath, Path outputPath) throws IOException {
@@ -39,6 +42,10 @@ public class WeightingColumnAppender {
                 writer.write(line + "," + weighting + "," + weightingAtr);
                 writer.newLine();
             }
+
+            // Log the smallest and largest ATR weightings
+            log.info("Smallest ATR Weighting: " + weigher.getSmallestAtrWeighting());
+            log.info("Largest ATR Weighting: " + weigher.getLargestAtrWeighting());
         }
     }
 }

@@ -14,9 +14,13 @@ public class MissingHourAdder {
      *
      * @param inputPath  Path to the input file (CSV with ticks).
      * @param outputPath Path to write the output file with added rows.
+     * @return
      * @throws IOException If reading or writing fails.
      */
-    public void addMissingHours(Path inputPath, Path outputPath) throws IOException {
+    public long addMissingHours(Path inputPath, Path outputPath) throws IOException {
+
+        long addedCount = 0;
+
         try (BufferedReader reader = new BufferedReader(new FileReader(inputPath.toFile()));
              BufferedWriter writer = new BufferedWriter(new FileWriter(outputPath.toFile()))) {
 
@@ -64,6 +68,7 @@ public class MissingHourAdder {
                 // Fill missing hours between the previous timestamp and the current timestamp
                 LocalDateTime nextHour = previousTimestamp.plusHours(1);
                 while (nextHour.isBefore(currentTimestamp)) {
+                    addedCount++;
                     // Generate a holiday row if there's a gap
                     String holidayRow = createHolidayRow(header, nextHour, previousRow);
                     writer.write(holidayRow + ",1"); // Write holiday tick row with 'holiday=1'
@@ -82,6 +87,7 @@ public class MissingHourAdder {
 
             // No rows should be added after the last timestamp; stop here
         }
+        return addedCount;
     }
     /**
      * Creates a holiday hourly row with most fields set to -1 for the missing hour.
