@@ -23,8 +23,10 @@ public class Main {
         try {
             cmd = parser.parse(options, args);
 
+            int atrWindowDefault = 14 * 24; // 336 for 14 days
+
             // Parse ATR window size (default: 14 periods)
-            var atrWindow = Integer.parseInt(cmd.getOptionValue("w", "14"));
+            var atrWindow = Integer.parseInt(cmd.getOptionValue("w", String.valueOf(atrWindowDefault)));
 
             // File names for minute and hourly data
             var minuteDataFile = cmd.getOptionValue("f", "btcusd_1-min_data.csv");
@@ -58,14 +60,14 @@ public class Main {
             processMinuteData(minuteDataPath, processedMinutePaths);
 
             // Process hourly data (validation, decimal shift, and timestamp check)
-            processHourlyData(hourlyDataPath, processedHourlyPaths);
+            processHourlyData(hourlyDataPath, processedHourlyPaths, atrWindow);
 
 
             // Combine hourly and minute data for integrity check
-            performDataIntegrityCheck(processedMinutePaths.decimalShifted, processedHourlyPaths.decimalShifted, processedMinutePaths.hourlyChecked);
+            performDataIntegrityCheck(processedMinutePaths.decimalShifted, processedMinutePaths.hourlyChecked, processedHourlyPaths.hourlyAtrOutput, processedMinutePaths.atrOutput);
 
             // Additional processing for ATR and formatting
-            performAdditionalProcessing(processedMinutePaths.hourlyChecked, processedMinutePaths, atrWindow);
+            performAdditionalProcessing(processedMinutePaths);
 
         } catch (ParseException e) {
             log.error("Error parsing command line arguments: {}", e.getMessage());
@@ -73,7 +75,7 @@ public class Main {
         }
     }
 
-    private static void processHourlyData(Path hourlyDataPath, ProcessedPaths paths) throws IOException {
+    private static void processHourlyData(Path hourlyDataPath, ProcessedPaths paths, int atrWindow) throws IOException {
         log.info("Processing hourly data...");
 
         var validator = new DataValidator();
@@ -84,28 +86,34 @@ public class Main {
         validator.validateDataFile(hourlyDataPath, paths.validated, paths.invalid);
         log.info("Hourly data validated.");
 
-        // Step 2: Decimal shift (reuse shift value)
+        // Step 2: Decimal shift
         Path shiftValuePath = paths.validated.getParent().resolve("decimal_shift_value.txt");
         if (!Files.exists(shiftValuePath)) {
             throw new IOException("Decimal shift value file not found. Ensure minute data is processed first.");
         }
 
-        // Read previously determined decimal shift value
         int decimalShift = Integer.parseInt(Files.readString(shiftValuePath).trim());
-        log.info("Using previously determined decimal shift value: {}", decimalShift);
-
-        // Shift decimal places for the hourly data using the predefined shift value
         decimalShifter.shiftDecimalPlacesWithPredefinedShift(paths.validated, paths.decimalShifted, decimalShift);
         log.info("Hourly data decimal values adjusted using predefined shift value: {}.", decimalShift);
 
-        // Step 3: Verify timestamps are in order
-        try {
-            timestampOrderChecker.checkTimestampOrder(paths.decimalShifted);
-            log.info("Hourly timestamps verified to be in correct order.");
-        } catch (IllegalStateException e) {
-            log.error("Hourly data timestamps are not in order: {}", e.getMessage());
-            throw e;
-        }
+        // Step 3: Verify timestamps
+        timestampOrderChecker.checkTimestampOrder(paths.decimalShifted);
+        log.info("Hourly timestamps verified to be correct.");
+
+        // Step 4: Append ATR values
+        log.info("Appending ATR values to hourly data...");
+        var atrAppender = new ATRAppender();
+        var reader = new BitcoinMinuteDataReader(); // Can be reused for reading hourly files
+
+
+        var longReader = new BitcoinLongDataReader(); // New long value reader
+
+        var hourlyDataLong = longReader.readFile(paths.decimalShifted); // Read hourly data
+
+
+        // Write ATR-enhanced hourly stream to output
+        atrAppender.appendATR(hourlyDataLong, atrWindow, paths.hourlyAtrOutput); // ATR window size is 14 by default
+        log.info("ATR values successfully added to hourly data.");
     }
 
 
@@ -139,34 +147,49 @@ public class Main {
         }
     }
 
-    private static void performDataIntegrityCheck(Path minuteData, Path hourlyData, Path hourlyChecked) throws IOException {
+    /**
+     * Inserts missing hours into minute data.
+     *
+     * @param minuteData
+     * @param hourlyCheckedMinuteData
+     * @param hourlyAtrOutput
+     * @param atrOutput
+     * @throws IOException
+     */
+    private static void performDataIntegrityCheck(Path minuteData, Path hourlyCheckedMinuteData, Path hourlyAtrOutput, Path atrOutput) throws IOException {
         log.info("Performing data integrity check...");
 
         var hourlyChecker = new HourlyDataChecker();
 
         // Step 1: Ensure hourly entries exist in minute data
-        int hourlyEntries = hourlyChecker.ensureHourlyEntries(minuteData, hourlyData, hourlyChecked);
+        int hourlyEntries = hourlyChecker.ensureHourlyEntries(minuteData, hourlyAtrOutput, hourlyCheckedMinuteData);
         log.info("Inserted hours: {}", hourlyEntries);
 
         // Step 2: Validate data integrity
         var integrityChecker = new DataIntegrityChecker();
-        String integrityResult = integrityChecker.validateDataIntegrity(hourlyChecked, hourlyData);
+        String integrityResult = integrityChecker.validateDataIntegrity(hourlyCheckedMinuteData, hourlyAtrOutput);
 
         if (!Objects.equals(integrityResult, "No issues found.")) {
             log.error("Data integrity check failed! {}", integrityResult);
             throw new IllegalStateException("Data integrity check failed! " + integrityResult);
         }
         log.info("Data integrity check passed.");
+
+        // Step 3: Copy ATR values from hourly data to minute data
+        CopyHourlyATRToMinute.copyHourlyATRToMinute(hourlyCheckedMinuteData, hourlyAtrOutput, atrOutput);
+        log.info("Successfully copied ATR values from hourly data to minute data.");
+
+
     }
 
-    private static void performAdditionalProcessing(Path finalMinuteData, ProcessedPaths paths, int atrWindow) throws IOException {
+    private static void performAdditionalProcessing(ProcessedPaths paths) throws IOException {
         log.info("Performing additional processing steps...");
 
         // Step 4: Append ATR values
-        var reader = new BitcoinMinuteDataReader();
-        var checkedData = reader.readFile(finalMinuteData);
-        new ATRAppender().appendATR(checkedData, atrWindow, paths.atrOutput);
-        log.info("ATR values appended.");
+        //var reader = new BitcoinLongDataReader();
+        //var checkedData = reader.readFile(finalMinuteData);
+        //new ATRAppender().appendATR(checkedData, atrWindow, paths.atrOutput);
+        //log.info("ATR values appended.");
 
         // Step 5: Fix date formatting
         var timestampFormatter = new TimestampFormatter();
@@ -257,6 +280,7 @@ class ProcessedPaths {
     final Path decimalShifted;
     final Path hourlyChecked;
     final Path atrOutput;
+    final Path hourlyAtrOutput;    // For hourly data ATR
     final Path timeStampFormatted;
     final Path nameAppended;
 
@@ -267,6 +291,7 @@ class ProcessedPaths {
         this.decimalShifted = outputDirectory.resolve("2_decimal_shifted_" + fileName);
         this.hourlyChecked = outputDirectory.resolve("3_checked_" + fileName);
         this.atrOutput = outputDirectory.resolve("4_atr_" + fileName);
+        this.hourlyAtrOutput = outputDirectory.resolve("4_hourly_atr_" + fileName); // New path
         this.timeStampFormatted = outputDirectory.resolve("5_formatted_" + fileName);
         this.nameAppended = outputDirectory.resolve("6_with_name_" + fileName);
     }

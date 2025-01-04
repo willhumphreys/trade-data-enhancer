@@ -45,8 +45,8 @@ public class MissingHourValidator {
                 // A new hour has started, validate the previous hour
                 if (!hasHourTick) {
                     throw new IllegalStateException(String.format(
-                            "Missing tick for the hour starting at %s.",
-                            currentHour.format(DATE_TIME_FORMATTER)
+                            "Missing tick for the hour starting at %s Checking %s.",
+                            currentHour.format(DATE_TIME_FORMATTER), filePath
                     ));
                 }
 

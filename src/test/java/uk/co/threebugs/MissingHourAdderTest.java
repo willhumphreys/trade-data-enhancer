@@ -50,7 +50,7 @@ class MissingHourAdderTest {
         // Verify the rows
         assertEquals("2023-10-01T09:00,instrument1,100,120,90,110,1000,10,1.00,1.00,false,90,120,2023-10-01T09:00,0",
                 outputData.get(1), "Row for 09:00 should have holiday=0");
-        assertEquals("2023-10-01T10:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,2023-10-01T10:00,1",
+        assertEquals("2023-10-01T10:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2023-10-01T10:00,1",
                 outputData.get(2), "Generated row for 10:00 should have holiday=1 and fields set to -1");
         assertEquals("2023-10-01T11:00,instrument1,110,130,100,120,1200,12,1.10,1.20,true,100,130,2023-10-01T11:00,0",
                 outputData.get(3), "Row for 11:00 should have holiday=0");
@@ -114,7 +114,7 @@ class MissingHourAdderTest {
                     () -> missingHourAdder.addMissingHours(finalInputFile, finalOutputFile),
                     "Expected IllegalStateException when required columns are missing");
 
-            assertEquals("Missing required columns: 'dateTime' or 'name'",
+            assertEquals("Column not found: dateTime",
                     exception.getMessage(), "Exception message should match");
 
         } catch (IOException e) {
@@ -131,6 +131,52 @@ class MissingHourAdderTest {
 
     }
 
+    @Test
+    public void testAddMissingHours2() throws IOException {
+        // Prepare test input
+        String inputData = """
+                dateTime,name,open,high,low,close,volume,price,delta,falseRange,trueRange,newHour,timeRange,deltaRange,utcNewHour,mapTime,newColumn
+                2024-06-01T00:37,btcusd_1-min_data,6759000000000,6759100000000,6758900000000,6758900000000,0.00739575,39218750000,14757.42,3229.78,false,6758900000000,6759000000000,2024-06-01T00:37,0
+                2024-06-01T08:01,btcusd_1-min_data,6768900000000,6769500000000,6768900000000,6769500000000,0.42485925,39196130952,14780.57,3227.92,false,6768900000000,6760500000000,2024-06-01T08:01,0
+                """;
+
+        // Write input data to a temporary file
+        Path inputPath = Files.createTempFile("missing_hours_test_input", ".csv");
+        Files.writeString(inputPath, inputData);
+
+        // Create a temporary output file
+        Path outputPath = Files.createTempFile("missing_hours_test_output", ".csv");
+
+        // Run MissingHourAdder
+        MissingHourAdder missingHourAdder = new MissingHourAdder();
+        missingHourAdder.addMissingHours(inputPath, outputPath);
+
+        // Read the output
+        List<String> outputLines = Files.readAllLines(outputPath);
+
+        // Verify the output contains all expected missing hours
+        // Expected Output:
+        String expectedOutput = """
+                dateTime,name,open,high,low,close,volume,price,delta,falseRange,trueRange,newHour,timeRange,deltaRange,utcNewHour,mapTime,newColumn,holiday
+                2024-06-01T00:00,btcusd_1-min_data,-1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2024-06-01T00:00,1,1
+                2024-06-01T00:37,btcusd_1-min_data,6759000000000,6759100000000,6758900000000,6758900000000,0.00739575,39218750000,14757.42,3229.78,false,6758900000000,6759000000000,2024-06-01T00:37,0,0
+                2024-06-01T01:00,btcusd_1-min_data,-1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2024-06-01T01:00,1,1
+                2024-06-01T02:00,btcusd_1-min_data,-1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2024-06-01T02:00,1,1
+                2024-06-01T03:00,btcusd_1-min_data,-1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2024-06-01T03:00,1,1
+                2024-06-01T04:00,btcusd_1-min_data,-1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2024-06-01T04:00,1,1
+                2024-06-01T05:00,btcusd_1-min_data,-1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2024-06-01T05:00,1,1
+                2024-06-01T06:00,btcusd_1-min_data,-1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2024-06-01T06:00,1,1
+                2024-06-01T07:00,btcusd_1-min_data,-1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2024-06-01T07:00,1,1
+                2024-06-01T08:00,btcusd_1-min_data,-1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2024-06-01T08:00,1,1
+                2024-06-01T08:01,btcusd_1-min_data,6768900000000,6769500000000,6768900000000,6769500000000,0.42485925,39196130952,14780.57,3227.92,false,6768900000000,6760500000000,2024-06-01T08:01,0,0
+                """;
+
+        assertEquals(expectedOutput.strip(), String.join("\n", outputLines).strip());
+
+        // Cleanup temporary files
+        Files.deleteIfExists(inputPath);
+        Files.deleteIfExists(outputPath);
+    }
 
     @Test
     void testAddMultipleMissingHours() throws IOException {
@@ -162,11 +208,11 @@ class MissingHourAdderTest {
         assertEquals("2023-10-01T08:00,instrument1,100,120,90,110,1000,10,1.00,1.00,false,90,120,2023-10-01T08:00,0",
                 outputData.get(1), "Row for 08:00 should have holiday=0");
 
-        assertEquals("2023-10-01T09:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,2023-10-01T09:00,1",
+        assertEquals("2023-10-01T09:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2023-10-01T09:00,1",
                 outputData.get(2), "Generated row for 09:00 should have holiday=1 and fields set to -1");
-        assertEquals("2023-10-01T10:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,2023-10-01T10:00,1",
+        assertEquals("2023-10-01T10:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2023-10-01T10:00,1",
                 outputData.get(3), "Generated row for 10:00 should have holiday=1 and fields set to -1");
-        assertEquals("2023-10-01T11:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,2023-10-01T11:00,1",
+        assertEquals("2023-10-01T11:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2023-10-01T11:00,1",
                 outputData.get(4), "Generated row for 11:00 should have holiday=1 and fields set to -1");
 
         assertEquals("2023-10-01T12:00,instrument1,110,130,100,120,1200,12,1.10,1.20,true,100,130,2023-10-01T12:00,0",
@@ -213,7 +259,7 @@ class MissingHourAdderTest {
                 outputData.get(1), "Row for 08:00 should have holiday=0"
         );
         assertEquals(
-                "2023-10-01T09:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,2023-10-01T09:00,1",
+                "2023-10-01T09:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2023-10-01T09:00,1",
                 outputData.get(2), "Generated row for 09:00 should have holiday=1 and fields set to -1"
         );
         assertEquals(
@@ -221,11 +267,11 @@ class MissingHourAdderTest {
                 outputData.get(3), "Row for 10:00 should have holiday=0"
         );
         assertEquals(
-                "2023-10-01T11:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,2023-10-01T11:00,1",
+                "2023-10-01T11:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2023-10-01T11:00,1",
                 outputData.get(4), "Generated row for 11:00 should have holiday=1 and fields set to -1"
         );
         assertEquals(
-                "2023-10-01T12:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,2023-10-01T12:00,1",
+                "2023-10-01T12:00,instrument1,-1,-1,-1,-1,-1,-1,-1,-1,true,-1,-1,2023-10-01T12:00,1",
                 outputData.get(5), "Generated row for 12:00 should have holiday=1 and fields set to -1"
         );
         assertEquals(

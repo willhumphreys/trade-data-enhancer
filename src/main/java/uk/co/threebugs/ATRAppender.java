@@ -7,43 +7,38 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.text.DecimalFormat;
-import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Stream;
 
-
 /**
- * A utility class for appending the Average True Range (ATR) to a stream of minute-level financial data.
- * ATR is a technical analysis indicator that measures market volatility.
+ * Appends Average True Range (ATR) to a stream of ShiftedMinuteData objects.
  */
 @Slf4j
 public class ATRAppender {
 
-    public void appendATR(Stream<MinuteData> data, int atrWindow1, Path outputPath) {
-
-        writeStreamToFile(appendATR(data, atrWindow1), outputPath);
-
-    }
-
-    Stream<MinuteDataWithATR> appendATR(Stream<MinuteData> data, int atrWindow1) {
-        // Use an ArrayList to store the previous close and calculated ATR values
-        List<Double> previousCloses = new ArrayList<>();
-        List<Double> atrValues = new ArrayList<>();
-
-
-        return data.map(minuteData -> getMinuteDataWithATR(minuteData, previousCloses, atrWindow1, atrValues));
-
-    }
+    private long largestATR = 0L;
+    private long smallestATR = Long.MAX_VALUE;
 
     private int processedCount = 0;
-    private double largestATR = 0.0;
-    private double smallestATR = Double.MAX_VALUE;
 
-    public void writeStreamToFile(Stream<MinuteDataWithATR> stream, Path outputPath) {
+    public void appendATR(Stream<ShiftedMinuteData> data, int atrWindow, Path outputPath) {
+        writeStreamToFile(appendATR(data, atrWindow), outputPath);
+    }
 
+    Stream<ShiftedMinuteDataWithATR> appendATR(Stream<ShiftedMinuteData> data, int atrWindow) {
+        // Use a LinkedList for efficient sliding window operations
+        List<Long> previousCloses = new LinkedList<>();
+        List<Long> atrValues = new LinkedList<>();
+
+        return data.map(minuteData -> getMinuteDataWithATR(minuteData, previousCloses, atrWindow, atrValues));
+    }
+
+    /**
+     * Writes ATR-enhanced data to the specified file.
+     */
+    public void writeStreamToFile(Stream<ShiftedMinuteDataWithATR> stream, Path outputPath) {
         try (BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
-
             writer.write("Timestamp,open,high,low,close,volume,atr");
             writer.newLine();
 
@@ -67,54 +62,64 @@ public class ATRAppender {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+
         log.info("Added ATR to {} rows. Largest ATR: {} Smallest ATR: {}", processedCount, largestATR, smallestATR);
     }
 
+    /**
+     * Formats a row for output.
+     */
+    private String formatDataEntry(ShiftedMinuteDataWithATR entry) {
+        ShiftedMinuteData data = entry.minuteData();
 
-    private String formatDataEntry(MinuteDataWithATR entry) {
-        MinuteData data = entry.minuteData();
-
-        // Create a DecimalFormat instance to format values without scientific notation
-        DecimalFormat decimalFormat = new DecimalFormat("0.############"); // No scientific notation
-
+        // Directly write long values (no conversion or formatting needed)
         return data.timestamp() + "," +
-                decimalFormat.format(data.open()) + "," +
-                decimalFormat.format(data.high()) + "," +
-                decimalFormat.format(data.low()) + "," +
-                decimalFormat.format(data.close()) + "," +
-                decimalFormat.format(data.volume()) + "," +
-                decimalFormat.format(entry.atr());
+                data.open() + "," +
+                data.high() + "," +
+                data.low() + "," +
+                data.close() + "," +
+                data.volume() + "," +
+                entry.atr();
     }
 
-    private MinuteDataWithATR getMinuteDataWithATR(MinuteData minuteData, List<Double> previousCloses, int atrWindow, List<Double> atrValues) {
-        // Calculate True Range for current row
-        double previousClose = previousCloses.isEmpty() ? minuteData.close() : previousCloses.getLast();
-        double tr = Math.max(
-                minuteData.high() - minuteData.low(),
-                Math.max(
-                        Math.abs(minuteData.high() - previousClose),
-                        Math.abs(minuteData.low() - previousClose))
-        );
+    /**
+     * Handles ATR calculation for ShiftedMinuteData.
+     */
+    private ShiftedMinuteDataWithATR getMinuteDataWithATR(ShiftedMinuteData minuteData, List<Long> previousCloses, int atrWindow, List<Long> atrValues) {
+        // Use long values directly
+        long open = minuteData.open();
+        long high = minuteData.high();
+        long low = minuteData.low();
+        long close = minuteData.close();
 
-        // Add the close price to the list
-        previousCloses.add(minuteData.close());
+        long previousClose = previousCloses.isEmpty() ? close : previousCloses.get(previousCloses.size() - 1);
+        long tr = Math.max(high - low, Math.max(Math.abs(high - previousClose), Math.abs(low - previousClose)));
 
-        // Calculate ATR once we have enough data for the window size
-        double atr = -1;
-        if (previousCloses.size() >= atrWindow) {
-            atrValues.add(tr); // Add TR to ATR calculation
+        // Add the close price to the sliding window
+        previousCloses.add(close);
 
-            if (atrValues.size() > atrWindow) {
-                // Keep only the last 'atrWindow' TR values
-                atrValues.removeFirst();
-            }
-
-            atr = atrValues.stream()
-                    .mapToDouble(Double::doubleValue)
-                    .average()
-                    .orElse(0.0); // Calculate the average (ATR)
+        // Remove the oldest close when the list exceeds the ATR window size
+        if (previousCloses.size() > atrWindow) {
+            previousCloses.remove(0);
         }
 
-        return new MinuteDataWithATR(minuteData, atr);
+        // Calculate ATR when enough data is available
+        long atr = -1L;
+        if (previousCloses.size() >= atrWindow) {
+            atrValues.add(tr);
+
+            // Keep only the last 'atrWindow' TR values
+            if (atrValues.size() > atrWindow) {
+                atrValues.remove(0);
+            }
+
+            // Calculate the average of TR values
+            atr = atrValues.stream()
+                    .mapToLong(Long::longValue)
+                    .sum() / atrValues.size();
+        }
+
+        // Return ATR data
+        return new ShiftedMinuteDataWithATR(minuteData, atr);
     }
 }

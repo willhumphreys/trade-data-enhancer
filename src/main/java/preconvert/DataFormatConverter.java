@@ -19,7 +19,7 @@ public class DataFormatConverter {
              BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
 
             // Write header for the output file
-            writer.write("Timestamp,Open,High,Low,Close,Volume\n");
+            writer.write("Timestamp,open,high,low,close,volume\n");
 
             String line;
 

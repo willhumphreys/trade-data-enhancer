@@ -17,66 +17,72 @@ public class MissingHourAdder {
      * @throws IOException If reading or writing fails.
      */
     public void addMissingHours(Path inputPath, Path outputPath) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new FileReader(inputPath.toFile())); BufferedWriter writer = new BufferedWriter(new FileWriter(outputPath.toFile()))) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(inputPath.toFile()));
+             BufferedWriter writer = new BufferedWriter(new FileWriter(outputPath.toFile()))) {
+
             String header = reader.readLine(); // Read the header
             if (header == null) {
                 throw new IOException("Input file is empty.");
             }
 
-            // Write the updated header with 'holiday' column to output
+            // Write the updated header with the appended 'holiday' column
             writer.write(header + ",holiday");
             writer.newLine();
 
-            String previousRow = null;  // Track the previous row to calculate gaps
-            LocalDateTime previousTimestamp = null; // Track the timestamp of the previous row
+            String currentLine = reader.readLine(); // Read the first data row
+            if (currentLine == null) {
+                throw new IOException("Input file contains only a header.");
+            }
 
-            // Process each subsequent row in the input file
-            String currentLine;
+            // Parse the first timestamp to determine the starting hour
+            String[] firstRowFields = currentLine.split(",");
+            int dateTimeIndex = getIndex(header, "dateTime");
+            LocalDateTime firstTimestamp = LocalDateTime.parse(firstRowFields[dateTimeIndex], FORMATTER);
+
+            // Align the first timestamp to the start of the hour
+            LocalDateTime firstHour = firstTimestamp.withMinute(0).withSecond(0);
+            String previousRow = null;
+            LocalDateTime previousTimestamp = null;
+
+            // Write the first row (aligning with the earliest hour, if needed)
+            writer.write(currentLine + ",0");
+            writer.newLine();
+            previousRow = currentLine;
+            previousTimestamp = firstHour;
+
+            // Process the rest of the rows
             while ((currentLine = reader.readLine()) != null) {
                 currentLine = currentLine.trim();
 
-                // Split line and parse timestamp
+                // Parse the current timestamp
                 String[] fields = currentLine.split(",");
-                int dateTimeIndex = getIndex(header, "dateTime");
                 LocalDateTime currentTimestamp = LocalDateTime.parse(fields[dateTimeIndex], FORMATTER);
 
-                // Align the current timestamp to the nearest hour (if needed, for consistency)
+                // Align the current timestamp to the nearest hour
                 currentTimestamp = currentTimestamp.withMinute(0).withSecond(0);
 
-                if (previousTimestamp == null) {
-                    // First row: Initialize previous timestamp
-                    previousTimestamp = currentTimestamp; // Align to start of the hour
-                    writer.write(currentLine + ",0"); // Write the first row with 'holiday = 0'
-                    writer.newLine();
-                    previousRow = currentLine;
-                    continue;
-                }
-
-                // Fill in missing hourly rows between previousTimestamp and currentTimestamp
-                LocalDateTime nextHour = previousTimestamp.plusHours(1); // Start with the next hour
-                while (!nextHour.isAfter(currentTimestamp)) {
-                    // Insert holiday tick if there's a gap
-                    if (nextHour.equals(currentTimestamp)) {
-                        break; // Don't add a holiday tick if it's the exact hour of the current row
-                    }
-                    // Generate an aligned holiday row
+                // Fill missing hours between the previous timestamp and the current timestamp
+                LocalDateTime nextHour = previousTimestamp.plusHours(1);
+                while (nextHour.isBefore(currentTimestamp)) {
+                    // Generate a holiday row if there's a gap
                     String holidayRow = createHolidayRow(header, nextHour, previousRow);
-                    writer.write(holidayRow + ",1"); // Write holiday tick row with 'holiday = 1'
+                    writer.write(holidayRow + ",1"); // Write holiday tick row with 'holiday=1'
                     writer.newLine();
-                    nextHour = nextHour.plusHours(1); // Move to the next hour
+                    nextHour = nextHour.plusHours(1);
                 }
 
-                // Write the current row as an existing tick
-                writer.write(currentLine + ",0"); // Write current row with 'holiday = 0'
+                // Write the current row (existing data)
+                writer.write(currentLine + ",0");
                 writer.newLine();
 
-                // Update the previous row and timestamp for the next iteration
+                // Update the previous row and timestamp
                 previousRow = currentLine;
                 previousTimestamp = currentTimestamp;
             }
+
+            // No rows should be added after the last timestamp; stop here
         }
     }
-
     /**
      * Creates a holiday hourly row with most fields set to -1 for the missing hour.
      *
