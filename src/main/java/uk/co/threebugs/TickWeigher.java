@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Scanner;
 
 @Slf4j
 class TickWeigher {
@@ -13,6 +14,57 @@ class TickWeigher {
 
     private BigDecimal smallestAtrWeighting = BigDecimal.valueOf(Double.MAX_VALUE); // Smallest ATR weighting encountered
     private BigDecimal largestAtrWeighting = BigDecimal.valueOf(Double.MIN_VALUE);  // Largest ATR weighting encountered
+
+    /**
+     * The main method to allow standalone execution of TickWeigher.
+     */
+    public static void main(String[] args) {
+        TickWeigher tickWeigher = new TickWeigher();
+        try (Scanner scanner = new Scanner(System.in)) {
+            System.out.println("Welcome to TickWeigher!");
+            while (true) {
+                System.out.println("\nWhat would you like to do?");
+                System.out.println("1: Set Starting Price");
+                System.out.println("2: Calculate Weighting for Current Price");
+                System.out.println("3: Reset Starting Price");
+                System.out.println("0: Exit");
+                System.out.print("Enter your choice: ");
+
+                int choice = scanner.nextInt();
+                switch (choice) {
+                    case 1: // Set Starting Price
+                        System.out.print("Enter Starting Price: ");
+                        BigDecimal startingPrice = scanner.nextBigDecimal();
+                        tickWeigher.startingPrice = startingPrice;
+                        System.out.println("Starting Price has been set to: " + startingPrice);
+                        break;
+
+                    case 2: // Calculate Weighting
+                        if (tickWeigher.startingPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                            System.out.println("Please set a valid Starting Price first.");
+                            break;
+                        }
+                        System.out.print("Enter Current Price: ");
+                        BigDecimal currentPrice = scanner.nextBigDecimal();
+                        String weighting = tickWeigher.getWeighting(currentPrice);
+                        System.out.println("Weighting (Current/Starting): " + weighting);
+                        break;
+
+                    case 3: // Reset Starting Price
+                        tickWeigher.reset();
+                        System.out.println("Starting Price has been reset.");
+                        break;
+
+                    case 0: // Exit
+                        System.out.println("Exiting TickWeigher.");
+                        return;
+
+                    default:
+                        System.out.println("Invalid choice. Please try again.");
+                }
+            }
+        }
+    }
 
     /**
      * Calculates the weighting relative to the starting price and returns it as a formatted String.
@@ -98,4 +150,5 @@ class TickWeigher {
         this.smallestAtrWeighting = BigDecimal.valueOf(Double.MAX_VALUE);
         this.largestAtrWeighting = BigDecimal.valueOf(Double.MIN_VALUE);
     }
+
 }

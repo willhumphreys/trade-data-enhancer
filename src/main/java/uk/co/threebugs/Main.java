@@ -28,9 +28,12 @@ public class Main {
             // Parse ATR window size (default: 14 periods)
             var atrWindow = Integer.parseInt(cmd.getOptionValue("w", String.valueOf(atrWindowDefault)));
 
+            var gold = "xauusd";
+            var es = "es";
+
             // File names for minute and hourly data
-            var minuteDataFile = cmd.getOptionValue("f", "btcusd_1-min_data.csv");
-            var hourlyDataFile = cmd.getOptionValue("h", "btcusd_1-hour_data.csv");
+            var minuteDataFile = cmd.getOptionValue("f", es + "-1mF.csv");
+            var hourlyDataFile = cmd.getOptionValue("h", es + "-1hF.csv");
 //
 //            var minuteDataFile = cmd.getOptionValue("f", "spx-1m-btmF.csv");
 //            var hourlyDataFile = cmd.getOptionValue("h", "spx-1h-btmF.csv");
@@ -58,10 +61,19 @@ public class Main {
             var processedMinutePaths = new ProcessedPaths(minuteDataFile, outputDirectory);
             var processedHourlyPaths = new ProcessedPaths(hourlyDataFile, outputDirectory);
 
-            log.info("Starting data processing for Minute Data: {} and Hourly Data: {}", minuteDataFile, hourlyDataFile);
+            // Instance of the trimmer
+            MinuteDataTrimmer trimmer = new MinuteDataTrimmer();
+
+
+            // Trim the minute data
+            trimmer.trimMinuteData(minuteDataPath, hourlyDataPath, processedMinutePaths.trimmedMinuteOutput);
+
+            log.info("Minute data successfully trimmed and written to {}.", processedMinutePaths.trimmedMinuteOutput);
+
+            log.info("Starting data processing for Minute Data: {} and Hourly Data: {}", processedMinutePaths.trimmedMinuteOutput, hourlyDataFile);
 
             // Process minute data (validation, decimal shift, and timestamp check)
-            processMinuteData(minuteDataPath, processedMinutePaths);
+            processMinuteData(processedMinutePaths.trimmedMinuteOutput, processedMinutePaths);
 
             // Process hourly data (validation, decimal shift, and timestamp check)
             processHourlyData(hourlyDataPath, processedHourlyPaths, atrWindow);
@@ -79,11 +91,14 @@ public class Main {
         }
     }
 
+
     private static void processHourlyData(Path hourlyDataPath, ProcessedPaths paths, int atrWindow) throws IOException {
         log.info("Processing hourly data...");
 
         var validator = new DataValidator();
         var decimalShifter = new DecimalShifter();
+        var fileSorter = new FileSorter();
+        var duplicateRemover = new DuplicateRemover();
         var timestampOrderChecker = new TimestampOrderChecker();
 
         // Step 1: Validate hourly data
@@ -100,21 +115,25 @@ public class Main {
         decimalShifter.shiftDecimalPlacesWithPredefinedShift(paths.validated, paths.decimalShifted, decimalShift);
         log.info("Hourly data decimal values adjusted using predefined shift value: {}.", decimalShift);
 
-        // Step 3: Verify timestamps
-        timestampOrderChecker.checkTimestampOrder(paths.decimalShifted);
+        // Step 3: Sort the file
+        fileSorter.sortFileByTimestamp(paths.decimalShifted, paths.sorted);
+        log.info("Hourly data sorted by timestamp.");
+
+        // Step 4: Remove duplicate timestamps
+        duplicateRemover.removeDuplicates(paths.sorted, paths.deduplicated);
+        log.info("Duplicates removed and deduplicated file written to: {}", paths.deduplicated);
+
+        // Step 5: Verify timestamps
+        timestampOrderChecker.checkTimestampOrder(paths.deduplicated);
         log.info("Hourly timestamps verified to be correct.");
 
-        // Step 4: Append ATR values
+        // Step 6: Append ATR values
         log.info("Appending ATR values to hourly data...");
         var atrAppender = new ATRAppender();
+        var longReader = new BitcoinLongDataReader();
 
-        var longReader = new BitcoinLongDataReader(); // New long value reader
-
-        var hourlyDataLong = longReader.readFile(paths.decimalShifted); // Read hourly data
-
-
-        // Write ATR-enhanced hourly stream to output
-        atrAppender.appendATR(hourlyDataLong, atrWindow, paths.hourlyAtrOutput); // ATR window size is 14 by default
+        var hourlyDataLong = longReader.readFile(paths.deduplicated); // Read from deduplicated file
+        atrAppender.appendATR(hourlyDataLong, atrWindow, paths.hourlyAtrOutput);
         log.info("ATR values successfully added to hourly data.");
     }
 
@@ -124,6 +143,8 @@ public class Main {
 
         var validator = new DataValidator();
         var decimalShifter = new DecimalShifter();
+        var fileSorter = new FileSorter();
+        var duplicateRemover = new DuplicateRemover();
         var timestampOrderChecker = new TimestampOrderChecker();
 
         // Step 1: Validate minute data
@@ -139,9 +160,17 @@ public class Main {
             writer.write(String.valueOf(decimalShift));
         }
 
-        // Step 3: Verify timestamps are in order
+        // Step 3: Sort the file
+        fileSorter.sortFileByTimestamp(paths.decimalShifted, paths.sorted);
+        log.info("Minute data sorted by timestamp.");
+
+        // Step 4: Remove duplicate timestamps
+        duplicateRemover.removeDuplicates(paths.sorted, paths.deduplicated);
+        log.info("Duplicates removed and deduplicated file written to: {}", paths.deduplicated);
+
+        // Step 5: Verify timestamps are in order
         try {
-            timestampOrderChecker.checkTimestampOrder(paths.decimalShifted);
+            timestampOrderChecker.checkTimestampOrder(paths.deduplicated);
             log.info("Minute timestamps verified to be in correct order.");
         } catch (IllegalStateException e) {
             log.error("Minute data timestamps are not in order: {}", e.getMessage());
@@ -282,21 +311,27 @@ class ProcessedPaths {
     final Path validated;
     final Path invalid;
     final Path decimalShifted;
+    final Path sorted;
+    final Path deduplicated;      // New path for deduplicated file
     final Path hourlyChecked;
     final Path atrOutput;
-    final Path hourlyAtrOutput;    // For hourly data ATR
+    final Path hourlyAtrOutput;
     final Path timeStampFormatted;
     final Path nameAppended;
+    final Path trimmedMinuteOutput;
 
     ProcessedPaths(String fileName, Path outputDirectory) {
         this.fileName = fileName;
         this.validated = outputDirectory.resolve("1_validated_" + fileName);
         this.invalid = outputDirectory.resolve("1_invalid_" + fileName);
         this.decimalShifted = outputDirectory.resolve("2_decimal_shifted_" + fileName);
-        this.hourlyChecked = outputDirectory.resolve("3_checked_" + fileName);
-        this.atrOutput = outputDirectory.resolve("4_atr_" + fileName);
-        this.hourlyAtrOutput = outputDirectory.resolve("4_hourly_atr_" + fileName); // New path
-        this.timeStampFormatted = outputDirectory.resolve("5_formatted_" + fileName);
-        this.nameAppended = outputDirectory.resolve("6_with_name_" + fileName);
+        this.sorted = outputDirectory.resolve("2_sorted_" + fileName);
+        this.deduplicated = outputDirectory.resolve("3_deduplicated_" + fileName); // Add new output path
+        this.hourlyChecked = outputDirectory.resolve("4_checked_" + fileName);
+        this.atrOutput = outputDirectory.resolve("5_atr_" + fileName);
+        this.hourlyAtrOutput = outputDirectory.resolve("5_hourly_atr_" + fileName);
+        this.timeStampFormatted = outputDirectory.resolve("6_formatted_" + fileName);
+        this.nameAppended = outputDirectory.resolve("7_with_name_" + fileName);
+        this.trimmedMinuteOutput = outputDirectory.resolve("1.1_trimmed_" + fileName);
     }
 }

@@ -52,3 +52,9 @@ tasks.register<JavaExec>("runWithDefaults") {
     // Use the classpath defined in the project
     classpath = sourceSets["main"].runtimeClasspath
 }
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(23))
+    }
+}

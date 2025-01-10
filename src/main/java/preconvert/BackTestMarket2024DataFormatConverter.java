@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 
-public class DataFormatConverter {
+public class BackTestMarket2024DataFormatConverter {
 
     // Define input and output date formatting
     private static final DateTimeFormatter INPUT_DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy;HH:mm:ss");
@@ -19,7 +19,7 @@ public class DataFormatConverter {
              BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
 
             // Write header for the output file
-            writer.write("Timestamp,open,high,low,close,volume\n");
+            writer.write("Timestamp,Open,High,Low,Close,Volume\n");
 
             String line;
 
@@ -32,8 +32,12 @@ public class DataFormatConverter {
 
                 // Split the input line by `;` delimiter
                 String[] parts = line.split(";");
-                if (parts.length < 7) {
+                if (parts.length < 6) {
                     throw new IllegalArgumentException("Invalid input format on line: " + line);
+                }
+
+                if (line.startsWith("Time")) {
+                    continue;
                 }
 
                 // Parse date and time
@@ -56,8 +60,8 @@ public class DataFormatConverter {
 
     public static void main(String[] args) {
         // Example usage
-        Path inputPath = Path.of("data/input/es-1h.csv");
-        Path outputPath = Path.of("data/input/es-1hF.csv");
+        Path inputPath = Path.of("data/input/xauusd-1m.csv");
+        Path outputPath = Path.of("data/input/xauusd-1mF.csv");
 
         try {
             convertFormat(inputPath, outputPath);
