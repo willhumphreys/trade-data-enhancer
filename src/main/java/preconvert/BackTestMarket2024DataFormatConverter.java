@@ -8,11 +8,17 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
 
 public class BackTestMarket2024DataFormatConverter {
 
-    // Define input and output date formatting
-    private static final DateTimeFormatter INPUT_DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy;HH:mm:ss");
+    // Updated date formatter to support optional seconds
+    private static final DateTimeFormatter INPUT_DATE_FORMAT = new DateTimeFormatterBuilder()
+            .appendPattern("dd/MM/yyyy;HH:mm")
+            .optionalStart()
+            .appendPattern(":ss")
+            .optionalEnd()
+            .toFormatter();
 
     public static void convertFormat(Path inputPath, Path outputPath) throws IOException {
         try (BufferedReader reader = Files.newBufferedReader(inputPath);
@@ -30,7 +36,7 @@ public class BackTestMarket2024DataFormatConverter {
                     continue;
                 }
 
-                // Split the input line by `;` delimiter
+                // Split the input line by ';' delimiter
                 String[] parts = line.split(";");
                 if (parts.length < 6) {
                     throw new IllegalArgumentException("Invalid input format on line: " + line);
@@ -60,8 +66,8 @@ public class BackTestMarket2024DataFormatConverter {
 
     public static void main(String[] args) {
         // Example usage
-        Path inputPath = Path.of("data/input/xauusd-1m.csv");
-        Path outputPath = Path.of("data/input/xauusd-1mF.csv");
+        Path inputPath = Path.of("data/input/xauusd-1d.csv");
+        Path outputPath = Path.of("data/input/xauusd-1df.csv");
 
         try {
             convertFormat(inputPath, outputPath);

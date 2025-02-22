@@ -26,6 +26,8 @@ dependencies {
     implementation("commons-cli:commons-cli:1.5.0")
     implementation("ch.qos.logback:logback-classic:1.5.15")
     implementation("org.jetbrains:annotations:24.0.1")
+    implementation("org.ta4j:ta4j-core:0.15")
+
 }
 
 tasks.test {

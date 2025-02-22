@@ -12,7 +12,7 @@ import java.nio.file.Path;
 @Slf4j
 public class WeightingColumnAppender {
 
-    public void addWeightingColumn(Path inputPath, Path outputPath) throws IOException {
+    public void addWeightingColumn(Path inputPath, Path outputPath, Path atrRatioOutputPath) throws IOException {
         try (BufferedReader reader = Files.newBufferedReader(inputPath); BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
 
             String header = reader.readLine();
@@ -24,7 +24,7 @@ public class WeightingColumnAppender {
             writer.write(header + ",weighting,weightingAtr");
             writer.newLine();
 
-            TickWeigher weigher = new TickWeigher();
+            TickWeigher weigher = new TickWeigher(atrRatioOutputPath);
             String line;
 
             while ((line = reader.readLine()) != null) {

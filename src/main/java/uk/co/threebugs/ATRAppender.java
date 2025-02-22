@@ -1,125 +1,120 @@
 package uk.co.threebugs;
 
 import lombok.extern.slf4j.Slf4j;
+import org.ta4j.core.Bar;
+import org.ta4j.core.BaseBar;
+import org.ta4j.core.BaseBarSeries;
+import org.ta4j.core.indicators.ATRIndicator;
+import org.ta4j.core.indicators.helpers.TRIndicator;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedList;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Appends Average True Range (ATR) to a stream of ShiftedMinuteData objects.
+ * Appends Average True Range (ATR) to a stream of ShiftedMinuteData objects using TA4J.
  */
 @Slf4j
 public class ATRAppender {
 
-    private long largestATR = 0L;
-    private long smallestATR = Long.MAX_VALUE;
+    /**
+     * Enhances minute data with ATR values computed over the given window.
+     *
+     * @param data      A stream of ShiftedMinuteData.
+     * @param atrWindow Number of periods to use in ATR calculation.
+     * @return A stream of ShiftedMinuteDataWithATR containing the ATR values.
+     */
+    public Stream<ShiftedMinuteDataWithATR> appendATR(Stream<ShiftedMinuteData> data, int atrWindow) {
+        // Collect all minute data into a list for conversion and for computing ATR values.
+        List<ShiftedMinuteData> minuteDataList = data.collect(Collectors.toList());
 
-    private int processedCount = 0;
+        // Convert the list of minute data into a list of TA4J Bars.
+        List<Bar> bars = new ArrayList<>(minuteDataList.size());
+        for (ShiftedMinuteData sd : minuteDataList) {
+            // Convert the timestamp (assumed seconds) to ZonedDateTime.
+            ZonedDateTime endTime = ZonedDateTime.ofInstant(Instant.ofEpochSecond(sd.timestamp()), ZoneId.systemDefault());
+            // Convert ShiftedMinuteData to a TA4J bar. Duration here is set to 1 minute.
+            Bar bar = new BaseBar(
+                    Duration.ofMinutes(1),
+                    endTime,
+                    (double) sd.open(),
+                    (double) sd.high(),
+                    (double) sd.low(),
+                    (double) sd.close(),
+                    sd.volume()
+            );
+            bars.add(bar);
+        }
 
-    public void appendATR(Stream<ShiftedMinuteData> data, int atrWindow, Path outputPath) {
-        writeStreamToFile(appendATR(data, atrWindow), outputPath);
-    }
+        // Create a TA4J TimeSeries from the bars.
+        TRIndicator timeSeries = new TRIndicator(new BaseBarSeries("minute-data", bars));
 
-    Stream<ShiftedMinuteDataWithATR> appendATR(Stream<ShiftedMinuteData> data, int atrWindow) {
-        // Use a LinkedList for efficient sliding window operations
-        List<Long> previousCloses = new LinkedList<>();
-        List<Long> atrValues = new LinkedList<>();
+        // Create the ATR indicator from TA4J.
+        ATRIndicator atrIndicator = new ATRIndicator(timeSeries, atrWindow);
 
-        return data.map(minuteData -> getMinuteDataWithATR(minuteData, previousCloses, atrWindow, atrValues));
+        // Map each minute data entry with its corresponding ATR value.
+        // It is assumed that ShiftedMinuteDataWithATR is a record with the following structure:
+        //   record ShiftedMinuteDataWithATR(long timestamp, long open, long high, long low, long close, double volume, double atr)
+        List<ShiftedMinuteDataWithATR> dataWithATR = new ArrayList<>(minuteDataList.size());
+        for (int i = 0; i < minuteDataList.size(); i++) {
+            ShiftedMinuteData sd = minuteDataList.get(i);
+            long atrValue = atrIndicator.getValue(i).longValue();
+
+            dataWithATR.add(new ShiftedMinuteDataWithATR(sd, atrValue));
+        }
+
+        log.info("Successfully appended ATR values using TA4J.");
+        return dataWithATR.stream();
     }
 
     /**
      * Writes ATR-enhanced data to the specified file.
+     *
+     * @param stream     The stream of ShiftedMinuteDataWithATR records.
+     * @param outputPath The output file path.
      */
     public void writeStreamToFile(Stream<ShiftedMinuteDataWithATR> stream, Path outputPath) {
-        try (BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
-            writer.write("Timestamp,open,high,low,close,volume,atr");
-            writer.newLine();
+        // Prepare a list to hold CSV lines including the header.
+        List<String> outputLines = new ArrayList<>();
+        outputLines.add("Timestamp,open,high,low,close,volume,atr");
 
-            stream.forEach(dataWithATR -> {
-                try {
-                    writer.write(formatDataEntry(dataWithATR));
-                    writer.newLine();
-                    processedCount++;
-                    if (dataWithATR.atr() > largestATR) {
-                        largestATR = dataWithATR.atr();
-                    }
-                    if (dataWithATR.atr() < smallestATR) {
-                        smallestATR = dataWithATR.atr();
-                    }
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-        } catch (UncheckedIOException e) {
-            throw new RuntimeException(e.getCause());
+        // Format each entry as a CSV record.
+        stream.forEach(data -> {
+            String line = formatDataEntry(data);
+            outputLines.add(line);
+        });
+
+        try {
+            Files.write(outputPath, outputLines);
+            log.info("ATR-enhanced minute data written to {}", outputPath);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new UncheckedIOException("Failed to write ATR-enhanced data to file", e);
         }
-
-        log.info("Added ATR to {} rows. Largest ATR: {} Smallest ATR: {}", processedCount, largestATR, smallestATR);
     }
 
     /**
-     * Formats a row for output.
+     * Formats a ShiftedMinuteDataWithATR record as a CSV string.
+     *
+     * @param entry The data entry with ATR.
+     * @return A CSV-formatted string.
      */
     private String formatDataEntry(ShiftedMinuteDataWithATR entry) {
-        ShiftedMinuteData data = entry.minuteData();
-
-        // Directly write long values (no conversion or formatting needed)
-        return data.timestamp() + "," +
-                data.open() + "," +
-                data.high() + "," +
-                data.low() + "," +
-                data.close() + "," +
-                data.volume() + "," +
-                entry.atr();
-    }
-
-    /**
-     * Handles ATR calculation for ShiftedMinuteData.
-     */
-    private ShiftedMinuteDataWithATR getMinuteDataWithATR(ShiftedMinuteData minuteData, List<Long> previousCloses, int atrWindow, List<Long> atrValues) {
-        // Use long values directly
-        long open = minuteData.open();
-        long high = minuteData.high();
-        long low = minuteData.low();
-        long close = minuteData.close();
-
-        long previousClose = previousCloses.isEmpty() ? close : previousCloses.get(previousCloses.size() - 1);
-        long tr = Math.max(high - low, Math.max(Math.abs(high - previousClose), Math.abs(low - previousClose)));
-
-        // Add the close price to the sliding window
-        previousCloses.add(close);
-
-        // Remove the oldest close when the list exceeds the ATR window size
-        if (previousCloses.size() > atrWindow) {
-            previousCloses.remove(0);
-        }
-
-        // Calculate ATR when enough data is available
-        long atr = -1L;
-        if (previousCloses.size() >= atrWindow) {
-            atrValues.add(tr);
-
-            // Keep only the last 'atrWindow' TR values
-            if (atrValues.size() > atrWindow) {
-                atrValues.remove(0);
-            }
-
-            // Calculate the average of TR values
-            atr = atrValues.stream()
-                    .mapToLong(Long::longValue)
-                    .sum() / atrValues.size();
-        }
-
-        // Return ATR data
-        return new ShiftedMinuteDataWithATR(minuteData, atr);
+        return String.format("%d,%d,%d,%d,%d,%.2f,%d",
+                entry.minuteData().timestamp(),
+                entry.minuteData().open(),
+                entry.minuteData().high(),
+                entry.minuteData().low(),
+                entry.minuteData().close(),
+                entry.minuteData().volume(),
+                entry.atr());
     }
 }

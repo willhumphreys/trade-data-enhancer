@@ -32,11 +32,12 @@ public class Main {
             var es = "es";
 
             // File names for minute and hourly data
-            var minuteDataFile = cmd.getOptionValue("f", es + "-1mF.csv");
-            var hourlyDataFile = cmd.getOptionValue("h", es + "-1hF.csv");
+//            var minuteDataFile = cmd.getOptionValue("f", es + "-1mF.csv");
+//            var hourlyDataFile = cmd.getOptionValue("h", es + "-1hF.csv");
 //
-//            var minuteDataFile = cmd.getOptionValue("f", "spx-1m-btmF.csv");
-//            var hourlyDataFile = cmd.getOptionValue("h", "spx-1h-btmF.csv");
+            var minuteDataFile = cmd.getOptionValue("f", "xauusd-1mF.csv");
+            var hourlyDataFile = cmd.getOptionValue("h", "xauusd-1hF.csv");
+            var dailyDataFile = cmd.getOptionValue("d", "xauusd-1dF.csv");
 
 
             // Define input/output directories
@@ -49,17 +50,24 @@ public class Main {
             // Prepare paths for data files
             var minuteDataPath = inputDirectory.resolve(minuteDataFile);
             var hourlyDataPath = inputDirectory.resolve(hourlyDataFile);
+            var dailyDataPath = inputDirectory.resolve(dailyDataFile);
 
             // Check if the hourly file exists
             if (Files.notExists(hourlyDataPath)) {
                 log.info("Hourly file '{}' not found. Generating it from the minute file '{}'.", hourlyDataFile, minuteDataFile);
 
                 new HourlyFileGenerator().generateHourlyFileFromMinuteFile(minuteDataPath, hourlyDataPath);
+
+            }
+
+            if (Files.notExists(dailyDataPath)) {
+                new HourlyFileGenerator().generateFileFromMinuteFile(minuteDataPath, dailyDataPath, HourlyFileGenerator.AggregationType.DAILY);
             }
 
             // Output paths for intermediate processing
             var processedMinutePaths = new ProcessedPaths(minuteDataFile, outputDirectory);
             var processedHourlyPaths = new ProcessedPaths(hourlyDataFile, outputDirectory);
+            var processedDailyPaths = new ProcessedPaths(dailyDataFile, outputDirectory);
 
             // Instance of the trimmer
             MinuteDataTrimmer trimmer = new MinuteDataTrimmer();
@@ -76,11 +84,13 @@ public class Main {
             processMinuteData(processedMinutePaths.trimmedMinuteOutput, processedMinutePaths);
 
             // Process hourly data (validation, decimal shift, and timestamp check)
-            processHourlyData(hourlyDataPath, processedHourlyPaths, atrWindow);
+            processData(hourlyDataPath, atrWindow, processedHourlyPaths.validated, processedHourlyPaths.invalid, processedHourlyPaths.decimalShifted, processedHourlyPaths.sorted, processedHourlyPaths.deduplicated, processedHourlyPaths.timeFrameAtrOutput, "Hourly");
+
+            processData(dailyDataPath, 14, processedDailyPaths.validated, processedDailyPaths.invalid, processedDailyPaths.decimalShifted, processedDailyPaths.sorted, processedDailyPaths.deduplicated, processedDailyPaths.timeFrameAtrOutput, "Daily");
 
 
             // Combine hourly and minute data for integrity check
-            performDataIntegrityCheck(processedMinutePaths.decimalShifted, processedMinutePaths.hourlyChecked, processedHourlyPaths.hourlyAtrOutput, processedMinutePaths.atrOutput);
+            performDataIntegrityCheck(processedMinutePaths.decimalShifted, processedMinutePaths.hourlyChecked, processedDailyPaths.timeFrameAtrOutput, processedMinutePaths.atrOutput);
 
             // Additional processing for ATR and formatting
             performAdditionalProcessing(processedMinutePaths);
@@ -92,8 +102,8 @@ public class Main {
     }
 
 
-    private static void processHourlyData(Path hourlyDataPath, ProcessedPaths paths, int atrWindow) throws IOException {
-        log.info("Processing hourly data...");
+    private static void processData(Path hourlyDataPath, int atrWindow, Path validated, Path invalidPath, Path decimalShifted, Path sorted, Path deduplicated, Path hourlyAtrOutput, String timeFrame) throws IOException {
+        log.info("Processing " + timeFrame + " data...");
 
         var validator = new DataValidator();
         var decimalShifter = new DecimalShifter();
@@ -102,41 +112,40 @@ public class Main {
         var timestampOrderChecker = new TimestampOrderChecker();
 
         // Step 1: Validate hourly data
-        validator.validateDataFile(hourlyDataPath, paths.validated, paths.invalid);
-        log.info("Hourly data validated.");
+        validator.validateDataFile(hourlyDataPath, validated, invalidPath);
+        log.info(timeFrame + " data validated.");
 
         // Step 2: Decimal shift
-        Path shiftValuePath = paths.validated.getParent().resolve("decimal_shift_value.txt");
+        Path shiftValuePath = validated.getParent().resolve("decimal_shift_value.txt");
         if (!Files.exists(shiftValuePath)) {
             throw new IOException("Decimal shift value file not found. Ensure minute data is processed first.");
         }
 
         int decimalShift = Integer.parseInt(Files.readString(shiftValuePath).trim());
-        decimalShifter.shiftDecimalPlacesWithPredefinedShift(paths.validated, paths.decimalShifted, decimalShift);
-        log.info("Hourly data decimal values adjusted using predefined shift value: {}.", decimalShift);
+        decimalShifter.shiftDecimalPlacesWithPredefinedShift(validated, decimalShifted, decimalShift);
+        log.info(timeFrame + " data decimal values adjusted using predefined shift value: {}.", decimalShift);
 
         // Step 3: Sort the file
-        fileSorter.sortFileByTimestamp(paths.decimalShifted, paths.sorted);
-        log.info("Hourly data sorted by timestamp.");
+        fileSorter.sortFileByTimestamp(decimalShifted, sorted);
+        log.info(timeFrame + " data sorted by timestamp.");
 
         // Step 4: Remove duplicate timestamps
-        duplicateRemover.removeDuplicates(paths.sorted, paths.deduplicated);
-        log.info("Duplicates removed and deduplicated file written to: {}", paths.deduplicated);
+        duplicateRemover.removeDuplicates(sorted, deduplicated);
+        log.info("Duplicates removed and deduplicated file written to: {}", deduplicated);
 
         // Step 5: Verify timestamps
-        timestampOrderChecker.checkTimestampOrder(paths.deduplicated);
-        log.info("Hourly timestamps verified to be correct.");
+        timestampOrderChecker.checkTimestampOrder(deduplicated);
+        log.info(timeFrame + " timestamps verified to be correct.");
 
         // Step 6: Append ATR values
         log.info("Appending ATR values to hourly data...");
         var atrAppender = new ATRAppender();
         var longReader = new BitcoinLongDataReader();
 
-        var hourlyDataLong = longReader.readFile(paths.deduplicated); // Read from deduplicated file
-        atrAppender.appendATR(hourlyDataLong, atrWindow, paths.hourlyAtrOutput);
-        log.info("ATR values successfully added to hourly data.");
+        var hourlyDataLong = longReader.readFile(deduplicated); // Read from deduplicated file
+        atrAppender.writeStreamToFile(atrAppender.appendATR(hourlyDataLong, atrWindow), hourlyAtrOutput);
+        log.info("ATR values successfully added to " + timeFrame + " data.");
     }
-
 
     private static void processMinuteData(Path minuteDataPath, ProcessedPaths paths) throws IOException {
         log.info("Processing minute data...");
@@ -183,22 +192,22 @@ public class Main {
      *
      * @param minuteData
      * @param hourlyCheckedMinuteData
-     * @param hourlyAtrOutput
+     * @param timeFrameAtrOutput
      * @param atrOutput
      * @throws IOException
      */
-    private static void performDataIntegrityCheck(Path minuteData, Path hourlyCheckedMinuteData, Path hourlyAtrOutput, Path atrOutput) throws IOException {
+    private static void performDataIntegrityCheck(Path minuteData, Path hourlyCheckedMinuteData, Path timeFrameAtrOutput, Path atrOutput) throws IOException {
         log.info("Performing data integrity check...");
 
         var hourlyChecker = new HourlyDataChecker();
 
         // Step 1: Ensure hourly entries exist in minute data
-        int hourlyEntries = hourlyChecker.ensureHourlyEntries(minuteData, hourlyAtrOutput, hourlyCheckedMinuteData);
+        int hourlyEntries = hourlyChecker.ensureHourlyEntries(minuteData, timeFrameAtrOutput, hourlyCheckedMinuteData);
         log.info("Inserted hours: {}", hourlyEntries);
 
         // Step 2: Validate data integrity
         var integrityChecker = new DataIntegrityChecker();
-        String integrityResult = integrityChecker.validateDataIntegrity(hourlyCheckedMinuteData, hourlyAtrOutput);
+        String integrityResult = integrityChecker.validateDataIntegrity(hourlyCheckedMinuteData, timeFrameAtrOutput);
 
         if (!Objects.equals(integrityResult, "No issues found.")) {
             log.error("Data integrity check failed! {}", integrityResult);
@@ -207,7 +216,8 @@ public class Main {
         log.info("Data integrity check passed.");
 
         // Step 3: Copy ATR values from hourly data to minute data
-        CopyHourlyATRToMinute.copyHourlyATRToMinute(hourlyCheckedMinuteData, hourlyAtrOutput, atrOutput);
+        //CopyHourlyATRToMinute.copyHourlyATRToMinute(hourlyCheckedMinuteData, timeFrameAtrOutput, atrOutput);
+        CopyDailyATRToMinute.copyDailyATRToMinute(hourlyCheckedMinuteData, timeFrameAtrOutput, atrOutput);
         log.info("Successfully copied ATR values from hourly data to minute data.");
 
 
@@ -236,7 +246,8 @@ public class Main {
         // Step 7: Add weighting column
         var weightingAdder = new WeightingColumnAppender();
         var weightedOutputPath = paths.hourlyChecked.getParent().resolve("7_weighted_" + paths.fileName);
-        weightingAdder.addWeightingColumn(paths.nameAppended, weightedOutputPath);
+        var atrRatioOutputPath = paths.hourlyChecked.getParent().resolve("7_atr_ratio_" + paths.fileName);
+        weightingAdder.addWeightingColumn(paths.nameAppended, weightedOutputPath, atrRatioOutputPath);
         log.info("Weighting column added. Output written to {}", weightedOutputPath);
 
         // Step 8: Add the 'newHour' column
@@ -315,7 +326,7 @@ class ProcessedPaths {
     final Path deduplicated;      // New path for deduplicated file
     final Path hourlyChecked;
     final Path atrOutput;
-    final Path hourlyAtrOutput;
+    final Path timeFrameAtrOutput;
     final Path timeStampFormatted;
     final Path nameAppended;
     final Path trimmedMinuteOutput;
@@ -329,7 +340,7 @@ class ProcessedPaths {
         this.deduplicated = outputDirectory.resolve("3_deduplicated_" + fileName); // Add new output path
         this.hourlyChecked = outputDirectory.resolve("4_checked_" + fileName);
         this.atrOutput = outputDirectory.resolve("5_atr_" + fileName);
-        this.hourlyAtrOutput = outputDirectory.resolve("5_hourly_atr_" + fileName);
+        this.timeFrameAtrOutput = outputDirectory.resolve("5_hourly_atr_" + fileName);
         this.timeStampFormatted = outputDirectory.resolve("6_formatted_" + fileName);
         this.nameAppended = outputDirectory.resolve("7_with_name_" + fileName);
         this.trimmedMinuteOutput = outputDirectory.resolve("1.1_trimmed_" + fileName);

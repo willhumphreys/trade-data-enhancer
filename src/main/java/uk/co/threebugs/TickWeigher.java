@@ -2,24 +2,37 @@ package uk.co.threebugs;
 
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.BufferedWriter;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Scanner;
 
 @Slf4j
 class TickWeigher {
 
+    private final Path atrRatioOutputPath;
     private BigDecimal startingPrice = BigDecimal.valueOf(-1); // For close-based weighting
     private BigDecimal startingAtr = BigDecimal.valueOf(-1);   // For ATR-based weighting
 
+    private boolean isFirstValidAtr = true; // Track the first valid ATR
+
+
     private BigDecimal smallestAtrWeighting = BigDecimal.valueOf(Double.MAX_VALUE); // Smallest ATR weighting encountered
     private BigDecimal largestAtrWeighting = BigDecimal.valueOf(Double.MIN_VALUE);  // Largest ATR weighting encountered
+
+    public TickWeigher(Path atrRatioOutputPath) {
+        this.atrRatioOutputPath = atrRatioOutputPath;
+    }
 
     /**
      * The main method to allow standalone execution of TickWeigher.
      */
     public static void main(String[] args) {
-        TickWeigher tickWeigher = new TickWeigher();
+        TickWeigher tickWeigher = new TickWeigher(Paths.get("data", "output", "atr-ratio.csv"));
         try (Scanner scanner = new Scanner(System.in)) {
             System.out.println("Welcome to TickWeigher!");
             while (true) {
@@ -120,6 +133,12 @@ class TickWeigher {
             largestAtrWeighting = formattedWeightingAtr;
         }
 
+        // If this is the first valid ATR, write to the file
+        if (isFirstValidAtr) {
+            writeAtrAndWeightingsToFile(atr, formattedWeightingAtr);
+            isFirstValidAtr = false;
+        }
+
         return formattedWeightingAtr.toPlainString();
     }
 
@@ -130,6 +149,23 @@ class TickWeigher {
      */
     BigDecimal getSmallestAtrWeighting() {
         return smallestAtrWeighting.equals(BigDecimal.valueOf(Double.MAX_VALUE)) ? BigDecimal.ZERO : smallestAtrWeighting;
+    }
+
+    /**
+     * Retrieves the largest ATR weighting recorded so far.
+     *
+     * @param atr          The ATR value.
+     * @param weightingAtr The computed ATR-based weighting.
+     */
+    private void writeAtrAndWeightingsToFile(BigDecimal atr, BigDecimal weightingAtr) {
+
+        try (BufferedWriter writer = Files.newBufferedWriter(atrRatioOutputPath)) {
+            writer.write("ATR,WeightingATR\n"); // Write header
+            writer.write(atr + "," + weightingAtr + "\n"); // Write the data
+            log.info("Successfully wrote ATR and weightingATR to file: {}", atrRatioOutputPath);
+        } catch (IOException e) {
+            log.error("Failed to write ATR and weightingATR to file: {}", e.getMessage());
+        }
     }
 
     /**

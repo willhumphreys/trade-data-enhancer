@@ -9,98 +9,110 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-/**
- * Utility class for generating hourly data from minute data.
- */
 @Slf4j
 public class HourlyFileGenerator {
 
     /**
-     * Generates the hourly data file from the minute data file.
+     * Generates an aggregated data file (hourly or daily) from the minute data file.
      *
      * @param minuteDataPath Path to the minute data file.
-     * @param hourlyDataPath Path to the output hourly data file.
+     * @param outputPath     Path to the output data file.
+     * @param aggregationType Aggregation type: HOURLY or DAILY.
      * @throws IOException If there is an error reading or writing files.
      */
-    public void generateHourlyFileFromMinuteFile(Path minuteDataPath, Path hourlyDataPath) throws IOException {
-        log.info("Generating hourly data from minute data...");
+    public void generateFileFromMinuteFile(Path minuteDataPath, Path outputPath, AggregationType aggregationType) throws IOException {
+        log.info("Generating {} data from minute data...", aggregationType);
 
-        // Parse minute data and aggregate into hourly data.
-        List<HourlyData> hourlyDataList = aggregateHourlyData(minuteDataPath);
+        // Aggregate the minute data based on the specified aggregation type.
+        List<HourlyData> aggregatedData = aggregateMinuteData(minuteDataPath, aggregationType);
 
-        // Write the aggregated hourly data to the hourly output file.
-        try (BufferedWriter writer = Files.newBufferedWriter(hourlyDataPath)) {
-            writer.write("Timestamp,Open,High,Low,Close,Volume"); // Write the header
+        // Write the aggregated data to the output file.
+        try (BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
+            writer.write("Timestamp,Open,High,Low,Close,Volume");
             writer.newLine();
-
-            for (HourlyData hourlyData : hourlyDataList) {
-                writer.write(hourlyData.toCsvRow());
+            for (HourlyData data : aggregatedData) {
+                writer.write(data.toCsvRow());
                 writer.newLine();
             }
         }
 
-        log.info("Hourly data generated at '{}'.", hourlyDataPath);
+        log.info("{} data generated at '{}'.", aggregationType, outputPath);
     }
 
     /**
-     * Aggregates minute data into hourly data.
+     * Aggregates minute data into either hourly or daily data.
      *
      * @param minuteDataPath Path of the minute data file.
-     * @return A list of aggregated hourly data rows.
+     * @param aggregationType Aggregation type: HOURLY or DAILY.
+     * @return A list of aggregated data rows.
      * @throws IOException If there is an error reading from the file.
      */
-    private List<HourlyData> aggregateHourlyData(Path minuteDataPath) throws IOException {
-        Map<Long, List<MinuteTick>> hourlyBuckets = new HashMap<>(); // Use UNIX timestamp for grouping
+    private List<HourlyData> aggregateMinuteData(Path minuteDataPath, AggregationType aggregationType) throws IOException {
+        Map<Long, List<MinuteTick>> buckets = new HashMap<>();
+        // Bucket size: 3600 seconds for hourly aggregation, 86400 seconds for daily aggregation.
+        long bucketSize = aggregationType == AggregationType.HOURLY ? 3600L : 86400L;
 
-        // Read minute data and populate hourly buckets
         try (BufferedReader reader = Files.newBufferedReader(minuteDataPath)) {
-            String line = reader.readLine(); // Read header
-            if (line == null || !line.matches(".*Timestamp.*")) {
+            String header = reader.readLine(); // Read header
+            if (header == null || !header.contains("Timestamp")) {
                 throw new IllegalArgumentException("Invalid or empty file. Expected 'Timestamp' in the header.");
             }
 
+            String line;
             while ((line = reader.readLine()) != null) {
                 String[] parts = line.split(",");
                 if (parts.length < 6) continue; // Skip invalid rows
 
-                // Parse data from the input row
-                long unixTimestamp = (long) Double.parseDouble(parts[0].trim());
+                long timestamp = (long) Double.parseDouble(parts[0].trim());
                 double open = Double.parseDouble(parts[1].trim());
                 double high = Double.parseDouble(parts[2].trim());
                 double low = Double.parseDouble(parts[3].trim());
                 double close = Double.parseDouble(parts[4].trim());
                 double volume = Double.parseDouble(parts[5].trim());
 
-                // Compute the hour bucket (truncating to nearest hour)
-                long hourTimestamp = unixTimestamp - (unixTimestamp % 3600);
-
-                // Add the tick to the appropriate bucket
-                hourlyBuckets.computeIfAbsent(hourTimestamp, _ -> new ArrayList<>())
-                        .add(new MinuteTick(unixTimestamp, open, high, low, close, volume));
+                // Compute the aggregation bucket (hour or day bucket)
+                long bucketTimestamp = timestamp - (timestamp % bucketSize);
+                buckets.computeIfAbsent(bucketTimestamp, _ -> new ArrayList<>())
+                        .add(new MinuteTick(timestamp, open, high, low, close, volume));
             }
         }
 
-        // Aggregate each hourly bucket into a single hourly row
-        List<HourlyData> hourlyDataList = new ArrayList<>();
-        for (Map.Entry<Long, List<MinuteTick>> entry : hourlyBuckets.entrySet()) {
-            long hourTimestamp = entry.getKey();
+        List<HourlyData> aggregatedList = new ArrayList<>();
+        for (Map.Entry<Long, List<MinuteTick>> entry : buckets.entrySet()) {
+            long bucketTimestamp = entry.getKey();
             List<MinuteTick> ticks = entry.getValue();
 
-            // Aggregate open, high, low, close, and volume
-            double open = ticks.getFirst().open;
-            double close = ticks.getLast().close;
+            // Sort ticks to ensure correct open and close values
+            ticks.sort(Comparator.comparingLong(mt -> mt.timestamp));
+
+            double open = ticks.get(0).open;
+            double close = ticks.get(ticks.size() - 1).close;
             double high = ticks.stream().mapToDouble(t -> t.high).max().orElseThrow();
             double low = ticks.stream().mapToDouble(t -> t.low).min().orElseThrow();
             double volume = ticks.stream().mapToDouble(t -> t.volume).sum();
 
-            // Add the aggregated data as an HourlyData instance
-            hourlyDataList.add(new HourlyData(hourTimestamp, open, high, low, close, volume));
+            aggregatedList.add(new HourlyData(bucketTimestamp, open, high, low, close, volume));
         }
 
-        // Ensure the hourly list is sorted by timestamp
-        hourlyDataList.sort(Comparator.comparingLong(data -> data.timestamp));
+        // Ensure the final aggregated list is sorted by timestamp.
+        aggregatedList.sort(Comparator.comparingLong(data -> data.timestamp));
 
-        return hourlyDataList;
+        return aggregatedList;
+    }
+
+    /**
+     * Generates an hourly data file from the minute data file.
+     *
+     * @param minuteDataPath Path to the minute data file.
+     * @param hourlyDataPath Path to the output hourly data file.
+     * @throws IOException If there is an error reading or writing files.
+     */
+    public void generateHourlyFileFromMinuteFile(Path minuteDataPath, Path hourlyDataPath) throws IOException {
+        generateFileFromMinuteFile(minuteDataPath, hourlyDataPath, AggregationType.HOURLY);
+    }
+
+    public enum AggregationType {
+        HOURLY, DAILY
     }
 }
 
@@ -126,7 +138,7 @@ class MinuteTick {
 }
 
 /**
- * Represents a single row of hourly data with OHLC (Open, High, Low, Close) and volume values.
+ * Represents a single row of aggregated data with OHLC (Open, High, Low, Close) and volume values.
  */
 class HourlyData {
     final long timestamp; // Unix timestamp in seconds
@@ -146,7 +158,7 @@ class HourlyData {
     }
 
     /**
-     * Converts this HourlyData instance to a CSV-formatted row.
+     * Converts this aggregated data instance to a CSV-formatted row.
      *
      * @return CSV row string.
      */
