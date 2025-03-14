@@ -7,10 +7,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 
+import static java.time.ZoneOffset.UTC;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class HourlyDataCheckerTest {
@@ -121,7 +121,7 @@ class HourlyDataCheckerTest {
 
     // Utility methods remain the same as in the previous tests
     private String formatEntry(LocalDateTime timestamp, long open, long high, long low, long close, double volume) {
-        long epochSecond = timestamp.toEpochSecond(ZoneOffset.UTC);
+        long epochSecond = timestamp.toEpochSecond(UTC);
         return String.format("%d,%d,%d,%d,%d,%f", epochSecond, open, high, low, close, volume);
     }
 
@@ -129,7 +129,7 @@ class HourlyDataCheckerTest {
         List<DataEntry> entries = new ArrayList<>();
         for (String line : lines) {
             String[] parts = line.split(",");
-            LocalDateTime timestamp = LocalDateTime.ofEpochSecond((long) Double.parseDouble(parts[0]), 0, ZoneOffset.UTC);
+            LocalDateTime timestamp = LocalDateTime.ofEpochSecond((long) Double.parseDouble(parts[0]), 0, UTC);
             entries.add(new DataEntry(timestamp, Long.parseLong(parts[1]), Long.parseLong(parts[2]), Long.parseLong(parts[3]), Long.parseLong(parts[4]), Double.parseDouble(parts[5])));
         }
         return entries;

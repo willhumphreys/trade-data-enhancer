@@ -1,6 +1,7 @@
 plugins {
     id("java")
-    application
+    id("application")
+    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 group = "uk.co.threebugs"
@@ -28,30 +29,31 @@ dependencies {
     implementation("org.jetbrains:annotations:24.0.1")
     implementation("org.ta4j:ta4j-core:0.15")
 
+    // AWS SDK
+    implementation("software.amazon.awssdk:s3:2.23.21")
+    implementation("software.amazon.awssdk:ssm:2.23.21")
+
+    // For LZO decompression
+    implementation("org.anarres.lzo:lzo-core:1.0.6")
+
+
 }
+
 
 tasks.test {
     useJUnitPlatform()
 }
 
-// Set up the application plugin
 application {
-    // Define the main class of the application
-    mainClass = "uk.co.threebugs.Main"
+    mainClass.set("uk.co.threebugs.Main")
 }
 
-// Add a custom task to run the application with default arguments
 tasks.register<JavaExec>("runWithDefaults") {
     group = "application"
     description = "Runs the application with default parameters for quick testing"
 
-    // Specify the main class
     mainClass.set("uk.co.threebugs.Main")
-
-    // Pass default arguments
     args = listOf("-w", "14", "-f", "btcusd_1-min_data.csv")
-
-    // Use the classpath defined in the project
     classpath = sourceSets["main"].runtimeClasspath
 }
 
@@ -59,4 +61,21 @@ java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(23))
     }
+}
+
+tasks.shadowJar {
+    archiveBaseName.set("app")
+    archiveClassifier.set("")
+    archiveVersion.set("")
+
+    mergeServiceFiles()
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.jar {
+    enabled = false
+}
+
+tasks.assemble {
+    dependsOn(tasks.shadowJar)
 }

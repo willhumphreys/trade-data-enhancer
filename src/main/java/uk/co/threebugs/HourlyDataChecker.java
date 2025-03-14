@@ -3,7 +3,6 @@ package uk.co.threebugs;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -43,6 +42,7 @@ public class HourlyDataChecker {
         List<RowData> outputData = new ArrayList<>();
         RowData previousRow = null;
         int hoursInsertedCounter = 0; // Counter for inserted hourly rows
+
 
         for (RowData currentRow : minuteData) {
             // Fill any gap in hours
@@ -142,12 +142,6 @@ public class HourlyDataChecker {
             );
         }
 
-        /**
-         * Converts the timestamp to UTC date string.
-         */
-        String getUtcDate() {
-            return UTC_DATE_FORMATTER.format(Instant.ofEpochSecond(this.timestamp));
-        }
 
         /**
          * Converts the RowData to a CSV line, including the UTC date as the last column.

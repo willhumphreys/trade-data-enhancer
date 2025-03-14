@@ -4,102 +4,153 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.cli.*;
 
 import java.io.IOException;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Map;
 import java.util.Objects;
 
 @Slf4j
 public class Main {
+
+
     public static void main(String[] args) throws IOException {
-        var options = new Options();
-        options.addOption("w", "window", true, "ATR window size (e.g., 14 periods)");
-        options.addOption("f", "file", true, "Minute data file name (e.g., spx-1m-btmF.csv)");
-        options.addOption("h", "hourly", true, "Hourly data file name (e.g., spx-1h-btmF.csv)");
+        Options options = new Options();
+        options.addOption("w", "window", true, "ATR window size");
+        options.addOption("f", "file", true, "Input file name");
+        options.addOption("s", "symbol", true, "Symbol (e.g., AAPL)");
+        options.addOption("p", "provider", true, "Data provider (e.g., polygon)");
+        options.addOption("h", "help", false, "Show help");
 
         CommandLineParser parser = new DefaultParser();
+        HelpFormatter formatter = new HelpFormatter();
         CommandLine cmd;
 
         try {
             cmd = parser.parse(options, args);
 
-            int atrWindowDefault = 14 * 24; // 336 for 14 days
-
-            // Parse ATR window size (default: 14 periods)
-            var atrWindow = Integer.parseInt(cmd.getOptionValue("w", String.valueOf(atrWindowDefault)));
-
-            var gold = "xauusd";
-            var es = "es";
-
-            // File names for minute and hourly data
-//            var minuteDataFile = cmd.getOptionValue("f", es + "-1mF.csv");
-//            var hourlyDataFile = cmd.getOptionValue("h", es + "-1hF.csv");
-//
-            var minuteDataFile = cmd.getOptionValue("f", "xauusd-1mF.csv");
-            var hourlyDataFile = cmd.getOptionValue("h", "xauusd-1hF.csv");
-            var dailyDataFile = cmd.getOptionValue("d", "xauusd-1dF.csv");
-
-
-            // Define input/output directories
-            var dataDirectory = Path.of("data");
-            var inputDirectory = dataDirectory.resolve("input");
-            var outputDirectory = dataDirectory.resolve("output");
-
-            deleteAllFilesInDirectory(outputDirectory);
-
-            // Prepare paths for data files
-            var minuteDataPath = inputDirectory.resolve(minuteDataFile);
-            var hourlyDataPath = inputDirectory.resolve(hourlyDataFile);
-            var dailyDataPath = inputDirectory.resolve(dailyDataFile);
-
-            // Check if the hourly file exists
-            if (Files.notExists(hourlyDataPath)) {
-                log.info("Hourly file '{}' not found. Generating it from the minute file '{}'.", hourlyDataFile, minuteDataFile);
-
-                new HourlyFileGenerator().generateHourlyFileFromMinuteFile(minuteDataPath, hourlyDataPath);
-
+            if (cmd.hasOption("h")) {
+                formatter.printHelp("Main", options);
+                System.exit(0);
             }
 
-            if (Files.notExists(dailyDataPath)) {
-                new HourlyFileGenerator().generateFileFromMinuteFile(minuteDataPath, dailyDataPath, HourlyFileGenerator.AggregationType.DAILY);
+            int atrWindow = Integer.parseInt(cmd.getOptionValue("w", "14"));
+            String fileName = cmd.getOptionValue("f");
+            String symbol = cmd.getOptionValue("s", "AAPL");
+            String provider = cmd.getOptionValue("p", "polygon");
+
+            // Data directories
+            Path dataDir = Paths.get("data");
+            Files.createDirectories(dataDir);
+            Path minuteDir = dataDir.resolve("minute");
+            Path hourlyDir = dataDir.resolve("hourly");
+            Path dailyDir = dataDir.resolve("daily");
+            Files.createDirectories(minuteDir);
+            Files.createDirectories(hourlyDir);
+            Files.createDirectories(dailyDir);
+
+            // Output directory
+            Path outputDirectory = Paths.get("output");
+            Files.createDirectories(outputDirectory);
+
+            // If no file was specified or the file doesn't exist, fetch from S3
+            Path minuteDataPath;
+            Path hourlyDataPath;
+            Path dailyDataPath;
+
+            if (fileName == null || !Files.exists(minuteDir.resolve(fileName))) {
+                log.info("Data file not specified or not found. Attempting to fetch from S3...");
+
+                DataFetcher dataFetcher = new DataFetcher(symbol, provider, dataDir);
+                Map<String, Path> dataFiles = dataFetcher.fetchData();
+
+                if (dataFiles.isEmpty()) {
+                    log.error("Failed to fetch required data files. Aborting.");
+                    System.exit(1);
+                }
+
+                minuteDataPath = dataFiles.get("1min");
+                hourlyDataPath = dataFiles.get("1hour");
+                dailyDataPath = dataFiles.get("1day");
+
+                log.info("Successfully fetched data files:");
+                log.info("  Minute data: {}", minuteDataPath);
+                log.info("  Hourly data: {}", hourlyDataPath);
+                log.info("  Daily data: {}", dailyDataPath);
+            } else {
+                minuteDataPath = minuteDir.resolve(fileName);
+                // Use default naming pattern for related files when only minute file is specified
+                String baseName = fileName.replaceAll("_1-min_", "_");
+                hourlyDataPath = hourlyDir.resolve(baseName.replaceAll("\\.csv$", "_1-hour.csv"));
+                dailyDataPath = dailyDir.resolve(baseName.replaceAll("\\.csv$", "_1-day.csv"));
+
+                log.info("Using specified data files:");
+                log.info("  Minute data: {}", minuteDataPath);
+                log.info("  Hourly data: {}", hourlyDataPath);
+                log.info("  Daily data: {}", dailyDataPath);
             }
+
+            // Extract filenames from paths
+            String minuteDataFile = minuteDataPath.getFileName().toString();
+            String hourlyDataFile = hourlyDataPath.getFileName().toString();
+            String dailyDataFile = dailyDataPath.getFileName().toString();
+
+            // Instance of the trimmer
+            MinuteDataTrimmer trimmer = new MinuteDataTrimmer();
 
             // Output paths for intermediate processing
             var processedMinutePaths = new ProcessedPaths(minuteDataFile, outputDirectory);
             var processedHourlyPaths = new ProcessedPaths(hourlyDataFile, outputDirectory);
             var processedDailyPaths = new ProcessedPaths(dailyDataFile, outputDirectory);
 
-            // Instance of the trimmer
-            MinuteDataTrimmer trimmer = new MinuteDataTrimmer();
-
-
             // Trim the minute data
             trimmer.trimMinuteData(minuteDataPath, hourlyDataPath, processedMinutePaths.trimmedMinuteOutput);
 
             log.info("Minute data successfully trimmed and written to {}.", processedMinutePaths.trimmedMinuteOutput);
 
-            log.info("Starting data processing for Minute Data: {} and Hourly Data: {}", processedMinutePaths.trimmedMinuteOutput, hourlyDataFile);
+            log.info("Starting data processing for Minute Data: {} and Hourly Data: {}",
+                    processedMinutePaths.trimmedMinuteOutput, hourlyDataFile);
 
             // Process minute data (validation, decimal shift, and timestamp check)
             processMinuteData(processedMinutePaths.trimmedMinuteOutput, processedMinutePaths);
 
             // Process hourly data (validation, decimal shift, and timestamp check)
-            processData(hourlyDataPath, atrWindow, processedHourlyPaths.validated, processedHourlyPaths.invalid, processedHourlyPaths.decimalShifted, processedHourlyPaths.sorted, processedHourlyPaths.deduplicated, processedHourlyPaths.timeFrameAtrOutput, "Hourly");
+            processData(hourlyDataPath, atrWindow,
+                    processedHourlyPaths.validated,
+                    processedHourlyPaths.invalid,
+                    processedHourlyPaths.decimalShifted,
+                    processedHourlyPaths.sorted,
+                    processedHourlyPaths.deduplicated,
+                    processedHourlyPaths.timeFrameAtrOutput,
+                    "Hourly");
 
-            processData(dailyDataPath, 14, processedDailyPaths.validated, processedDailyPaths.invalid, processedDailyPaths.decimalShifted, processedDailyPaths.sorted, processedDailyPaths.deduplicated, processedDailyPaths.timeFrameAtrOutput, "Daily");
-
+            // Process daily data
+            processData(dailyDataPath, 14,
+                    processedDailyPaths.validated,
+                    processedDailyPaths.invalid,
+                    processedDailyPaths.decimalShifted,
+                    processedDailyPaths.sorted,
+                    processedDailyPaths.deduplicated,
+                    processedDailyPaths.timeFrameAtrOutput,
+                    "Daily");
 
             // Combine hourly and minute data for integrity check
-            performDataIntegrityCheck(processedMinutePaths.decimalShifted, processedMinutePaths.hourlyChecked, processedDailyPaths.timeFrameAtrOutput, processedMinutePaths.atrOutput);
+            performDataIntegrityCheck(
+                    processedMinutePaths.decimalShifted,
+                    processedMinutePaths.hourlyChecked,
+                    processedDailyPaths.timeFrameAtrOutput,
+                    processedMinutePaths.atrOutput);
 
             // Additional processing for ATR and formatting
             performAdditionalProcessing(processedMinutePaths);
 
         } catch (ParseException e) {
-            log.error("Error parsing command line arguments: {}", e.getMessage());
-            new HelpFormatter().printHelp("Main", options);
+            log.error("Error parsing command line arguments", e);
+            formatter.printHelp("Main", options);
+            System.exit(1);
         }
     }
+
 
 
     private static void processData(Path hourlyDataPath, int atrWindow, Path validated, Path invalidPath, Path decimalShifted, Path sorted, Path deduplicated, Path hourlyAtrOutput, String timeFrame) throws IOException {
@@ -285,17 +336,6 @@ public class Main {
 
     }
 
-    private static void deleteAllFilesInDirectory(Path directory) {
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
-            for (Path file : stream) {
-                Files.delete(file);
-            }
-            log.info("Deleted all files in directory: {}", directory);
-        } catch (IOException e) {
-            log.error("Failed to delete files in directory {}: {}", directory, e.getMessage());
-        }
-    }
-
     /**
      * Adds missing hourly rows to the processed data, with holiday column and mapTime adjustments.
      *
@@ -331,7 +371,12 @@ class ProcessedPaths {
     final Path nameAppended;
     final Path trimmedMinuteOutput;
 
-    ProcessedPaths(String fileName, Path outputDirectory) {
+    ProcessedPaths(String fileName2, Path outputDirectory) {
+
+        Path path = Path.of(fileName2);
+
+        String fileName = path.getName(path.getNameCount() - 1).toString();
+
         this.fileName = fileName;
         this.validated = outputDirectory.resolve("1_validated_" + fileName);
         this.invalid = outputDirectory.resolve("1_invalid_" + fileName);
