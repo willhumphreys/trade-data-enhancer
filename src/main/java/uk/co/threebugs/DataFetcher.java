@@ -3,25 +3,23 @@ package uk.co.threebugs;
 import lombok.Builder;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import org.anarres.lzo.LzoAlgorithm;
-import org.anarres.lzo.LzoDecompressor;
-import org.anarres.lzo.LzoInputStream;
-import org.anarres.lzo.LzoLibrary;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
+import uk.co.threebugs.preconvert.PolygonDataConverter;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.*;
 
 @Slf4j
 public class DataFetcher {
 
-    private static final String S3_BUCKET = "mochi-tickdata-historical";
+    private static final String S3_BUCKET = "mochi-prod-raw-historical-data";
     private final S3Client s3Client;
     private final String symbol;
     private final String provider;
@@ -32,8 +30,7 @@ public class DataFetcher {
         this.symbol = symbol != null ? symbol : "AAPL";
         this.provider = provider != null ? provider : "polygon";
         this.dataDir = dataDir;
-        this.s3Client = S3Client.builder().region(Region.US_EAST_1) // Adjust if your bucket is in a different region
-                .build();
+        this.s3Client = S3Client.builder().region(Region.EU_CENTRAL_1).build();
 
         // Create data directories if they don't exist
         for (DataInterval interval : intervals) {
@@ -52,10 +49,14 @@ public class DataFetcher {
         for (DataInterval interval : intervals) {
             Path dataFile = fetchIntervalData(interval);
             if (dataFile != null) {
-                dataFiles.put(interval.getName(), dataFile);
+
+                Path fixedDataFile = dataFile.resolveSibling(dataFile.getFileName() + "F.csv");
+                new PolygonDataConverter().convert(dataFile, fixedDataFile);
+
+                dataFiles.put(interval.getName(), fixedDataFile);
             } else {
                 log.error("Failed to fetch data for interval {}", interval.getName());
-                return Collections.emptyMap(); // Abort if any data is missing
+                throw new IOException("Failed to fetch data for interval " + interval.getName());
             }
         }
 
@@ -66,15 +67,14 @@ public class DataFetcher {
         Path targetDir = dataDir.resolve(interval.getDirName());
 
         // Check if we already have CSV files
-        try (var files = Files.newDirectoryStream(targetDir, "*.csv")) {
-            Optional<Path> existingFile = files.iterator().hasNext() ? Optional.of(files.iterator().next()) : Optional.empty();
-
-            if (existingFile.isPresent()) {
-                log.info("Using existing data file for {}: {}", interval.getName(), existingFile.get().getFileName());
-                return existingFile.get();
+        try (var files = Files.newDirectoryStream(targetDir, "*.csv.lzo")) {
+            Iterator<Path> iterator = files.iterator();
+            if (iterator.hasNext()) {
+                Path existingFile = iterator.next();
+                log.info("Using existing data file for {}: {}", interval.getName(), existingFile.getFileName());
+                return existingFile;
             }
         }
-
         // Find the latest file in S3
         String s3Path = findLatestS3Path(interval);
         if (s3Path == null) {
@@ -85,14 +85,17 @@ public class DataFetcher {
         // Download and decompress
         String filename = s3Path.substring(s3Path.lastIndexOf('/') + 1);
         Path localLzoPath = targetDir.resolve(filename);
-        Path localCsvPath = targetDir.resolve(filename.replace(".lzo", ".csv"));
+        Path localCsvPath = targetDir.resolve(filename.replace(".lzo", ""));
+
 
         if (downloadFromS3(s3Path, localLzoPath)) {
-            if (decompressLzo(localLzoPath, localCsvPath)) {
-                // Delete the LZO file after successful decompression
-                Files.deleteIfExists(localLzoPath);
-                return localCsvPath;
-            }
+            // Try up to 3 times to decompress
+            decompressLzo(localLzoPath, localCsvPath);
+            // Delete the LZO file after successful decompression
+            Files.deleteIfExists(localLzoPath);
+            return localCsvPath;
+
+
         }
 
         return null;
@@ -176,24 +179,44 @@ public class DataFetcher {
         }
     }
 
-    private boolean decompressLzo(Path lzoPath, Path csvPath) {
+    private void decompressLzo(Path lzoPath, Path csvPath) throws IOException {
         log.info("Decompressing {} to {}", lzoPath, csvPath);
 
-        LzoDecompressor decompressor = LzoLibrary.getInstance().newDecompressor(LzoAlgorithm.LZO1X, null);
+        // Check if LZO file exists and has content
+        if (!Files.exists(lzoPath) || Files.size(lzoPath) == 0) {
+            log.error("LZO file {} doesn't exist or is empty", lzoPath);
+            throw new IllegalArgumentException("LZO file doesn't exist or is empty: " + lzoPath);
+        }
 
-        try (InputStream is = new BufferedInputStream(Files.newInputStream(lzoPath)); InputStream decompressedStream = new LzoInputStream(is, decompressor); OutputStream os = new BufferedOutputStream(Files.newOutputStream(csvPath, StandardOpenOption.CREATE))) {
+        // Use lzop command-line tool for decompression
+        ProcessBuilder processBuilder = new ProcessBuilder(
+                "lzop", "-d", "-f", "-o", csvPath.toString(), lzoPath.toString()
+        );
 
-            // Use a simple copy operation with the decompressed stream
-            byte[] buffer = new byte[8192];
-            int bytesRead;
-            while ((bytesRead = decompressedStream.read(buffer)) != -1) {
-                os.write(buffer, 0, bytesRead);
+        processBuilder.redirectErrorStream(true);
+        Process process = processBuilder.start();
+
+        // Read output for logging purposes
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                log.debug("lzop output: {}", line);
             }
+        }
 
-            return true;
-        } catch (Exception e) {
-            log.error("Failed to decompress {}", lzoPath, e);
-            return false;
+        try {
+            int exitCode = process.waitFor();
+            if (exitCode == 0) {
+                log.info("Successfully decompressed {} to {}", lzoPath, csvPath);
+            } else {
+                log.error("lzop process exited with code {}", exitCode);
+                // Clean up any partial output file
+                Files.deleteIfExists(csvPath);
+                throw new IOException("lzop decompression failed with exit code: " + exitCode);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while waiting for lzop process", e);
         }
     }
 
