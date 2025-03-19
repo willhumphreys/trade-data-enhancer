@@ -2,6 +2,8 @@ package uk.co.threebugs;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.cli.*;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -18,13 +20,15 @@ public class Main {
         Options options = new Options();
         options.addOption("w", "window", true, "ATR window size");
         options.addOption("f", "file", true, "Input file name");
-        options.addOption("s", "symbol", true, "Symbol (e.g., AAPL)");
+        options.addOption("t", "ticker", true, "Symbol (e.g., AAPL)");
         options.addOption("p", "provider", true, "Data provider (e.g., polygon)");
         options.addOption("h", "help", false, "Show help");
 
         CommandLineParser parser = new DefaultParser();
         HelpFormatter formatter = new HelpFormatter();
         CommandLine cmd;
+
+        S3Client s3Client = S3Client.builder().region(Region.EU_CENTRAL_1).build();
 
         try {
             cmd = parser.parse(options, args);
@@ -36,8 +40,37 @@ public class Main {
 
             int atrWindow = Integer.parseInt(cmd.getOptionValue("w", "14"));
             String fileName = cmd.getOptionValue("f");
-            String symbol = cmd.getOptionValue("s", "AAPL");
-            String provider = cmd.getOptionValue("p", "polygon");
+            options.addOption("t", "ticker", true, "Ticker symbol to process");
+            options.addOption("p", "provider", true, "Data provider");
+
+
+            String inputBucket = System.getenv("INPUT_BUCKET_NAME");
+            String outputBucket = System.getenv("OUTPUT_BUCKET_NAME");
+
+
+            String ticker;
+            if (cmd.hasOption("t")) {
+                ticker = cmd.getOptionValue("t");
+            } else {
+                throw new IllegalArgumentException("Ticker symbol must be specified.");
+            }
+
+            String provider;
+            if (cmd.hasOption("p")) {
+                provider = cmd.getOptionValue("p");
+            } else {
+                throw new IllegalArgumentException("Data provider must be specified.");
+            }
+
+            if (inputBucket == null) {
+                log.error("Input bucket name not specified. Set an environmental variable with the value INPUT_BUCKET_NAME. Aborting.");
+                System.exit(1);
+            }
+
+            if (outputBucket == null) {
+                log.error("Input bucket name not specified. Set an environmental variable with the value OUTPUT_BUCKET_NAME Aborting.");
+                System.exit(1);
+            }
 
             // Data directories
             Path dataDir = Paths.get("data");
@@ -61,8 +94,8 @@ public class Main {
             if (fileName == null || !Files.exists(minuteDir.resolve(fileName))) {
                 log.info("Data file not specified or not found. Attempting to fetch from S3...");
 
-                DataFetcher dataFetcher = new DataFetcher(symbol, provider, dataDir);
-                Map<String, Path> dataFiles = dataFetcher.fetchData();
+                DataFetcher dataFetcher = new DataFetcher(ticker, provider, dataDir, s3Client);
+                Map<String, Path> dataFiles = dataFetcher.fetchData(inputBucket);
 
                 if (dataFiles.isEmpty()) {
                     log.error("Failed to fetch required data files. Aborting.");
@@ -142,7 +175,12 @@ public class Main {
                     processedMinutePaths.atrOutput);
 
             // Additional processing for ATR and formatting
-            performAdditionalProcessing(processedMinutePaths);
+            Path inputPath = performAdditionalProcessing(processedMinutePaths);
+
+
+            String s3Key = new DataUploader(ticker, provider, s3Client).uploadMinuteData(inputPath, outputBucket);
+
+            log.info("Data successfully uploaded to S3. S3 key: {}", s3Key);
 
         } catch (ParseException e) {
             log.error("Error parsing command line arguments", e);
@@ -274,7 +312,7 @@ public class Main {
 
     }
 
-    private static void performAdditionalProcessing(ProcessedPaths paths) throws IOException {
+    private static Path performAdditionalProcessing(ProcessedPaths paths) throws IOException {
         log.info("Performing additional processing steps...");
 
         // Step 4: Append ATR values
@@ -333,6 +371,8 @@ public class Main {
             log.error("Validation failed! Missing hourly records: {}", e.getMessage());
             throw e;
         }
+
+        return missingHourlyPath;
 
     }
 

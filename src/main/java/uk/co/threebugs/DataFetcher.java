@@ -4,7 +4,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 import uk.co.threebugs.preconvert.PolygonDataConverter;
@@ -19,18 +18,17 @@ import java.util.*;
 @Slf4j
 public class DataFetcher {
 
-    private static final String S3_BUCKET = "mochi-prod-raw-historical-data";
     private final S3Client s3Client;
     private final String symbol;
     private final String provider;
     private final Path dataDir;
     private final List<DataInterval> intervals = Arrays.asList(DataInterval.builder().name("1min").dirName("minute").s3Path("1min").build(), DataInterval.builder().name("1hour").dirName("hourly").s3Path("1hour").build(), DataInterval.builder().name("1day").dirName("daily").s3Path("1day").build());
 
-    public DataFetcher(String symbol, String provider, Path dataDir) {
+    public DataFetcher(String symbol, String provider, Path dataDir, S3Client s3Client) {
         this.symbol = symbol != null ? symbol : "AAPL";
         this.provider = provider != null ? provider : "polygon";
         this.dataDir = dataDir;
-        this.s3Client = S3Client.builder().region(Region.EU_CENTRAL_1).build();
+        this.s3Client = s3Client;
 
         // Create data directories if they don't exist
         for (DataInterval interval : intervals) {
@@ -43,11 +41,11 @@ public class DataFetcher {
         }
     }
 
-    public Map<String, Path> fetchData() throws IOException {
+    public Map<String, Path> fetchData(String inputBucketName) throws IOException {
         Map<String, Path> dataFiles = new HashMap<>();
 
         for (DataInterval interval : intervals) {
-            Path dataFile = fetchIntervalData(interval);
+            Path dataFile = fetchIntervalData(interval, inputBucketName);
             if (dataFile != null) {
 
                 Path fixedDataFile = dataFile.resolveSibling(dataFile.getFileName() + "F.csv");
@@ -63,7 +61,7 @@ public class DataFetcher {
         return dataFiles;
     }
 
-    private Path fetchIntervalData(DataInterval interval) throws IOException {
+    private Path fetchIntervalData(DataInterval interval, String inputBucketName) throws IOException {
         Path targetDir = dataDir.resolve(interval.getDirName());
 
         // Check if we already have CSV files
@@ -76,7 +74,7 @@ public class DataFetcher {
             }
         }
         // Find the latest file in S3
-        String s3Path = findLatestS3Path(interval);
+        String s3Path = findLatestS3Path(interval, inputBucketName);
         if (s3Path == null) {
             log.error("No data found in S3 for {} {}", symbol, interval.getName());
             return null;
@@ -88,7 +86,7 @@ public class DataFetcher {
         Path localCsvPath = targetDir.resolve(filename.replace(".lzo", ""));
 
 
-        if (downloadFromS3(s3Path, localLzoPath)) {
+        if (downloadFromS3(s3Path, localLzoPath, inputBucketName)) {
             // Try up to 3 times to decompress
             decompressLzo(localLzoPath, localCsvPath);
             // Delete the LZO file after successful decompression
@@ -101,37 +99,37 @@ public class DataFetcher {
         return null;
     }
 
-    private String findLatestS3Path(DataInterval interval) {
+    private String findLatestS3Path(DataInterval interval, String inputBucketName) {
         String prefix = String.format("stocks/%s/%s/%s/", symbol, provider, interval.getS3Path());
 
         try {
             // Find latest year
-            String latestYear = findLatestDirectory(prefix);
+            String latestYear = findLatestDirectory(prefix, inputBucketName);
             if (latestYear == null) return null;
 
             // Find latest month
             String monthPrefix = prefix + latestYear + "/";
-            String latestMonth = findLatestDirectory(monthPrefix);
+            String latestMonth = findLatestDirectory(monthPrefix, inputBucketName);
             if (latestMonth == null) return null;
 
             // Find latest day
             String dayPrefix = monthPrefix + latestMonth + "/";
-            String latestDay = findLatestDirectory(dayPrefix);
+            String latestDay = findLatestDirectory(dayPrefix, inputBucketName);
             if (latestDay == null) return null;
 
             if ("1min".equals(interval.getS3Path())) {
                 // For minute data, we need to find latest hour too
                 String hourPrefix = dayPrefix + latestDay + "/";
-                String latestHour = findLatestDirectory(hourPrefix);
+                String latestHour = findLatestDirectory(hourPrefix, inputBucketName);
                 if (latestHour == null) return null;
 
                 // Find latest file
                 String filePrefix = hourPrefix + latestHour + "/";
-                return findLatestFile(filePrefix, ".lzo");
+                return findLatestFile(filePrefix, ".lzo", inputBucketName);
             } else {
                 // For hourly/daily just find latest file
                 String filePrefix = dayPrefix + latestDay + "/";
-                return findLatestFile(filePrefix, ".lzo");
+                return findLatestFile(filePrefix, ".lzo", inputBucketName);
             }
         } catch (Exception e) {
             log.error("Error finding latest S3 path for {}", interval.getName(), e);
@@ -139,9 +137,9 @@ public class DataFetcher {
         }
     }
 
-    private String findLatestDirectory(String prefix) {
+    private String findLatestDirectory(String prefix, String inputBucketName) {
         try {
-            ListObjectsV2Request request = ListObjectsV2Request.builder().bucket(S3_BUCKET).prefix(prefix).delimiter("/").build();
+            ListObjectsV2Request request = ListObjectsV2Request.builder().bucket(inputBucketName).prefix(prefix).delimiter("/").build();
 
             ListObjectsV2Response response = s3Client.listObjectsV2(request);
 
@@ -152,9 +150,9 @@ public class DataFetcher {
         }
     }
 
-    private String findLatestFile(String prefix, String suffix) {
+    private String findLatestFile(String prefix, String suffix, String inputBucketName) {
         try {
-            ListObjectsV2Request request = ListObjectsV2Request.builder().bucket(S3_BUCKET).prefix(prefix).build();
+            ListObjectsV2Request request = ListObjectsV2Request.builder().bucket(inputBucketName).prefix(prefix).build();
 
             ListObjectsV2Response response = s3Client.listObjectsV2(request);
 
@@ -165,11 +163,11 @@ public class DataFetcher {
         }
     }
 
-    private boolean downloadFromS3(String s3Path, Path localPath) {
+    private boolean downloadFromS3(String s3Path, Path localPath, String inputBucketName) {
         try {
             log.info("Downloading {} to {}", s3Path, localPath);
 
-            GetObjectRequest getObjectRequest = GetObjectRequest.builder().bucket(S3_BUCKET).key(s3Path).build();
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder().bucket(inputBucketName).key(s3Path).build();
 
             s3Client.getObject(getObjectRequest, ResponseTransformer.toFile(localPath.toFile()));
             return true;
