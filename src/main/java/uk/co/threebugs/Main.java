@@ -15,7 +15,6 @@ import java.util.Objects;
 @Slf4j
 public class Main {
 
-
     public static void main(String[] args) throws IOException {
         Options options = new Options();
         options.addOption("w", "window", true, "ATR window size");
@@ -185,7 +184,6 @@ public class Main {
             System.exit(1);
         }
     }
-
 
 
     private static void processData(Path hourlyDataPath, int atrWindow, Path validated, Path invalidPath, Path decimalShifted, Path sorted, Path deduplicated, Path hourlyAtrOutput, String timeFrame) throws IOException {

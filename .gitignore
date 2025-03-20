@@ -44,3 +44,4 @@ bin/
 data
 *.hprof
 .env
+output
