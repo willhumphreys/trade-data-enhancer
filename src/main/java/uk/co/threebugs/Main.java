@@ -68,7 +68,7 @@ public class Main {
             }
 
             if (outputBucket == null) {
-                log.error("Input bucket name not specified. Set an environmental variable with the value OUTPUT_BUCKET_NAME Aborting.");
+                log.error("Output bucket name not specified. Set an environmental variable with the value OUTPUT_BUCKET_NAME Aborting.");
                 System.exit(1);
             }
 
@@ -87,15 +87,15 @@ public class Main {
             Files.createDirectories(outputDirectory);
 
             // If no file was specified or the file doesn't exist, fetch from S3
-            Path minuteDataPath;
-            Path hourlyDataPath;
-            Path dailyDataPath;
+            DataFetcher.DataFileInfo minuteDataPath;
+            DataFetcher.DataFileInfo hourlyDataPath;
+            DataFetcher.DataFileInfo dailyDataPath;
 
             if (fileName == null || !Files.exists(minuteDir.resolve(fileName))) {
                 log.info("Data file not specified or not found. Attempting to fetch from S3...");
 
                 DataFetcher dataFetcher = new DataFetcher(ticker, provider, dataDir, s3Client);
-                Map<String, Path> dataFiles = dataFetcher.fetchData(inputBucket);
+                Map<String, DataFetcher.DataFileInfo> dataFiles = dataFetcher.fetchData(inputBucket);
 
                 if (dataFiles.isEmpty()) {
                     log.error("Failed to fetch required data files. Aborting.");
@@ -107,26 +107,24 @@ public class Main {
                 dailyDataPath = dataFiles.get("1day");
 
                 log.info("Successfully fetched data files:");
-                log.info("  Minute data: {}", minuteDataPath);
-                log.info("  Hourly data: {}", hourlyDataPath);
-                log.info("  Daily data: {}", dailyDataPath);
             } else {
-                minuteDataPath = minuteDir.resolve(fileName);
+                minuteDataPath = new DataFetcher.DataFileInfo(minuteDir.resolve(fileName), null);
                 // Use default naming pattern for related files when only minute file is specified
                 String baseName = fileName.replaceAll("_1-min_", "_");
-                hourlyDataPath = hourlyDir.resolve(baseName.replaceAll("\\.csv$", "_1-hour.csv"));
-                dailyDataPath = dailyDir.resolve(baseName.replaceAll("\\.csv$", "_1-day.csv"));
+                hourlyDataPath = new DataFetcher.DataFileInfo(hourlyDir.resolve(baseName.replaceAll("\\.csv$", "_1-hour.csv")), null);
+                dailyDataPath = new DataFetcher.DataFileInfo(dailyDir.resolve(baseName.replaceAll("\\.csv$", "_1-day.csv")), null);
 
                 log.info("Using specified data files:");
-                log.info("  Minute data: {}", minuteDataPath);
-                log.info("  Hourly data: {}", hourlyDataPath);
-                log.info("  Daily data: {}", dailyDataPath);
             }
 
+            log.info("  Minute data: {}", minuteDataPath);
+            log.info("  Hourly data: {}", hourlyDataPath);
+            log.info("  Daily data: {}", dailyDataPath);
+
             // Extract filenames from paths
-            String minuteDataFile = minuteDataPath.getFileName().toString();
-            String hourlyDataFile = hourlyDataPath.getFileName().toString();
-            String dailyDataFile = dailyDataPath.getFileName().toString();
+            String minuteDataFile = minuteDataPath.getLocalPath().getFileName().toString();
+            String hourlyDataFile = hourlyDataPath.getLocalPath().getFileName().toString();
+            String dailyDataFile = dailyDataPath.getLocalPath().getFileName().toString();
 
             // Instance of the trimmer
             MinuteDataTrimmer trimmer = new MinuteDataTrimmer();
@@ -137,7 +135,7 @@ public class Main {
             var processedDailyPaths = new ProcessedPaths(dailyDataFile, outputDirectory);
 
             // Trim the minute data
-            trimmer.trimMinuteData(minuteDataPath, hourlyDataPath, processedMinutePaths.trimmedMinuteOutput);
+            trimmer.trimMinuteData(minuteDataPath.getLocalPath(), hourlyDataPath.getLocalPath(), processedMinutePaths.trimmedMinuteOutput);
 
             log.info("Minute data successfully trimmed and written to {}.", processedMinutePaths.trimmedMinuteOutput);
 
@@ -148,7 +146,7 @@ public class Main {
             processMinuteData(processedMinutePaths.trimmedMinuteOutput, processedMinutePaths);
 
             // Process hourly data (validation, decimal shift, and timestamp check)
-            processData(hourlyDataPath, atrWindow,
+            processData(hourlyDataPath.getLocalPath(), atrWindow,
                     processedHourlyPaths.validated,
                     processedHourlyPaths.invalid,
                     processedHourlyPaths.decimalShifted,
@@ -158,7 +156,7 @@ public class Main {
                     "Hourly");
 
             // Process daily data
-            processData(dailyDataPath, 14,
+            processData(dailyDataPath.getLocalPath(), 14,
                     processedDailyPaths.validated,
                     processedDailyPaths.invalid,
                     processedDailyPaths.decimalShifted,
@@ -177,8 +175,7 @@ public class Main {
             // Additional processing for ATR and formatting
             Path inputPath = performAdditionalProcessing(processedMinutePaths);
 
-
-            String s3Key = new DataUploader(ticker, provider, s3Client).uploadMinuteData(inputPath, outputBucket);
+            String s3Key = new DataUploader(s3Client).uploadMinuteData(inputPath, outputBucket, minuteDataPath.getS3Path());
 
             log.info("Data successfully uploaded to S3. S3 key: {}", s3Key);
 

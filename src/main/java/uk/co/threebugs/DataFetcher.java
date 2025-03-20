@@ -41,17 +41,17 @@ public class DataFetcher {
         }
     }
 
-    public Map<String, Path> fetchData(String inputBucketName) throws IOException {
-        Map<String, Path> dataFiles = new HashMap<>();
+    public Map<String, DataFileInfo> fetchData(String inputBucketName) throws IOException {
+        Map<String, DataFileInfo> dataFiles = new HashMap<>();
 
         for (DataInterval interval : intervals) {
-            Path dataFile = fetchIntervalData(interval, inputBucketName);
+            FetchResult dataFile = fetchIntervalData(interval, inputBucketName);
             if (dataFile != null) {
 
-                Path fixedDataFile = dataFile.resolveSibling(dataFile.getFileName() + "F.csv");
-                new PolygonDataConverter().convert(dataFile, fixedDataFile);
+                Path fixedDataFile = dataFile.getLocalPath().resolveSibling(dataFile.getLocalPath().getFileName() + "F.csv");
+                new PolygonDataConverter().convert(dataFile.getLocalPath(), fixedDataFile);
 
-                dataFiles.put(interval.getName(), fixedDataFile);
+                dataFiles.put(interval.getName(), new DataFileInfo(fixedDataFile, dataFile.getS3Path()));
             } else {
                 log.error("Failed to fetch data for interval {}", interval.getName());
                 throw new IOException("Failed to fetch data for interval " + interval.getName());
@@ -61,7 +61,7 @@ public class DataFetcher {
         return dataFiles;
     }
 
-    private Path fetchIntervalData(DataInterval interval, String inputBucketName) throws IOException {
+    private FetchResult fetchIntervalData(DataInterval interval, String inputBucketName) throws IOException {
         Path targetDir = dataDir.resolve(interval.getDirName());
 
         // Check if we already have CSV files
@@ -70,7 +70,8 @@ public class DataFetcher {
             if (iterator.hasNext()) {
                 Path existingFile = iterator.next();
                 log.info("Using existing data file for {}: {}", interval.getName(), existingFile.getFileName());
-                return existingFile;
+                // For existing files, we don't have the S3 path, so return null for it
+                return new FetchResult(existingFile, null);
             }
         }
         // Find the latest file in S3
@@ -91,12 +92,23 @@ public class DataFetcher {
             decompressLzo(localLzoPath, localCsvPath);
             // Delete the LZO file after successful decompression
             Files.deleteIfExists(localLzoPath);
-            return localCsvPath;
-
-
+            return new FetchResult(localCsvPath, s3Path);
         }
 
         return null;
+    }
+
+    // Class to hold both the local path and S3 path
+    @lombok.Value
+    public static class DataFileInfo {
+        Path localPath;
+        String s3Path;
+    }
+
+    @lombok.Value
+    private static class FetchResult {
+        Path localPath;
+        String s3Path;
     }
 
     private String findLatestS3Path(DataInterval interval, String inputBucketName) {

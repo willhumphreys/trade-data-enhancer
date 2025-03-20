@@ -16,21 +16,9 @@ import java.nio.file.Path;
 public class DataUploader {
 
     private final S3Client s3Client;
-    private final String symbol;
-    private final String provider;
-    private final String outputBucket;
 
-    public DataUploader(String symbol, String provider, String outputBucket) {
-        this.symbol = symbol;
-        this.provider = provider;
-        this.outputBucket = outputBucket;
-        this.s3Client = S3Client.builder().build();
-    }
 
-    public DataUploader(String symbol, String provider, S3Client s3Client) {
-        this.symbol = symbol;
-        this.provider = provider;
-        this.outputBucket = null; // Will need to be provided in the uploadMinuteData method
+    public DataUploader(S3Client s3Client) {
         this.s3Client = s3Client;
     }
 
@@ -38,25 +26,12 @@ public class DataUploader {
      * Uploads processed minute data to S3
      *
      * @param processedFile  Path to the processed minute data file
-     * @return S3 path where data was uploaded
-     * @throws IOException if there's an error during compression or upload
-     */
-    public String uploadMinuteData(Path processedFile) throws IOException {
-        if (outputBucket == null) {
-            throw new IllegalStateException("Output bucket not specified in constructor");
-        }
-        return uploadMinuteData(processedFile, outputBucket);
-    }
-
-    /**
-     * Uploads processed minute data to S3
-     *
-     * @param processedFile  Path to the processed minute data file
      * @param s3OutputBucket S3 bucket to upload to
+     * @param s3Key The key for the data file
      * @return S3 path where data was uploaded
      * @throws IOException if there's an error during compression or upload
      */
-    public String uploadMinuteData(Path processedFile, String s3OutputBucket) throws IOException {
+    public String uploadMinuteData(Path processedFile, String s3OutputBucket, String s3Key) throws IOException {
         // Extract the original file name from the processed file path
         String originalFileName = processedFile.getFileName().toString();
 
@@ -67,8 +42,6 @@ public class DataUploader {
         log.info("Compressing {} to {}", processedFile, outputLzoFile);
         compressToLzo(processedFile, outputLzoFile);
 
-        // Use the exact same filename as the key, maintaining the original structure
-        String s3Key = outputLzoFile.getFileName().toString();
 
         log.info("Uploading {} to s3://{}/{}", outputLzoFile, s3OutputBucket, s3Key);
         uploadToS3(outputLzoFile, s3Key, s3OutputBucket);
