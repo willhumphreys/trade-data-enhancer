@@ -21,8 +21,10 @@ public class Main {
         options.addOption("f", "file", true, "Input file name");
         options.addOption("t", "ticker", true, "Symbol (e.g., AAPL)");
         options.addOption("p", "provider", true, "Data provider (e.g., polygon)");
-        options.addOption("s", "s3_path", true, "s3_path");
-        options.addOption("h", "help", false, "Show help");
+        options.addOption("m", "s3_key_min", true, "s3_key_min");
+        options.addOption("h", "s3_key_hour", true, "s3_key_min");
+        options.addOption("d", "s3_key_day", true, "s3_key_min");
+
 
         CommandLineParser parser = new DefaultParser();
         HelpFormatter formatter = new HelpFormatter();
@@ -47,11 +49,25 @@ public class Main {
             String inputBucket = System.getenv("INPUT_BUCKET_NAME");
             String outputBucket = System.getenv("OUTPUT_BUCKET_NAME");
 
-            String s3_path;
-            if (cmd.hasOption("s")) {
-                s3_path = cmd.getOptionValue("s");
+            String s3_key_min;
+            if (cmd.hasOption("m")) {
+                s3_key_min = cmd.getOptionValue("m");
             } else {
-                throw new IllegalArgumentException("S3 path must be specified.");
+                throw new IllegalArgumentException("S3 key min path must be specified.");
+            }
+
+            String s3_key_hour;
+            if (cmd.hasOption("h")) {
+                s3_key_hour = cmd.getOptionValue("h");
+            } else {
+                throw new IllegalArgumentException("S3 key hour path must be specified.");
+            }
+
+            String s3_key_day;
+            if (cmd.hasOption("d")) {
+                s3_key_day = cmd.getOptionValue("d");
+            } else {
+                throw new IllegalArgumentException("S3 key day path must be specified.");
             }
 
             String ticker;
@@ -101,7 +117,7 @@ public class Main {
                 log.info("Data file not specified or not found. Attempting to fetch from S3...");
 
                 DataFetcher dataFetcher = new DataFetcher(ticker, provider, dataDir, s3Client);
-                Map<String, DataFetcher.DataFileInfo> dataFiles = dataFetcher.fetchData(inputBucket, s3_path);
+                Map<String, DataFetcher.DataFileInfo> dataFiles = dataFetcher.fetchData(inputBucket, s3_key_min, s3_key_hour, s3_key_day);
 
                 if (dataFiles.isEmpty()) {
                     log.error("Failed to fetch required data files. Aborting.");

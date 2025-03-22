@@ -22,7 +22,8 @@ public class DataFetcher {
     private final String symbol;
     private final String provider;
     private final Path dataDir;
-    private final List<DataInterval> intervals = Arrays.asList(DataInterval.builder().name("1min").dirName("minute").s3Path("1min").build(), DataInterval.builder().name("1hour").dirName("hourly").s3Path("1hour").build(), DataInterval.builder().name("1day").dirName("daily").s3Path("1day").build());
+
+    private final List<DataInterval> intervals;
 
     public DataFetcher(String symbol, String provider, Path dataDir, S3Client s3Client) {
         this.symbol = symbol != null ? symbol : "AAPL";
@@ -30,7 +31,14 @@ public class DataFetcher {
         this.dataDir = dataDir;
         this.s3Client = s3Client;
 
-        // Create data directories if they don't exist
+        // Initialize basic interval information (without S3 keys)
+        this.intervals = Arrays.asList(
+                DataInterval.builder().name("1min").dirName("minute").build(),
+                DataInterval.builder().name("1hour").dirName("hourly").build(),
+                DataInterval.builder().name("1day").dirName("daily").build()
+        );
+
+        // Create data directories
         for (DataInterval interval : intervals) {
             try {
                 Path dir = dataDir.resolve(interval.getDirName());
@@ -41,12 +49,28 @@ public class DataFetcher {
         }
     }
 
-    public Map<String, DataFileInfo> fetchData(String inputBucketName, String s3_path) throws IOException {
+    public Map<String, DataFileInfo> fetchData(String inputBucketName,
+                                               String s3KeyMin,
+                                               String s3KeyHour,
+                                               String s3KeyDay) throws IOException {
+        // Create a map to associate each interval name with its S3 key
+        Map<String, String> s3KeyMap = Map.of(
+                "1min", s3KeyMin,
+                "1hour", s3KeyHour,
+                "1day", s3KeyDay
+        );
+
         Map<String, DataFileInfo> dataFiles = new HashMap<>();
 
         for (DataInterval interval : intervals) {
-            FetchResult dataFile = fetchIntervalData(interval, inputBucketName, s3_path);
-            Path fixedDataFile = dataFile.getLocalPath().resolveSibling(dataFile.getLocalPath().getFileName() + "F.csv");
+            // Get the appropriate S3 key for this interval
+            String s3Key = s3KeyMap.get(interval.getName());
+
+            // Process the data file using the S3 key
+            FetchResult dataFile = fetchIntervalData(interval, inputBucketName, s3Key);
+            Path fixedDataFile = dataFile.getLocalPath().resolveSibling(
+                    dataFile.getLocalPath().getFileName() + "F.csv"
+            );
             new PolygonDataConverter().convert(dataFile.getLocalPath(), fixedDataFile);
 
             dataFiles.put(interval.getName(), new DataFileInfo(fixedDataFile, dataFile.getS3Path()));
@@ -55,7 +79,7 @@ public class DataFetcher {
         return dataFiles;
     }
 
-    private FetchResult fetchIntervalData(DataInterval interval, String inputBucketName, String s3_path) throws IOException {
+    private FetchResult fetchIntervalData(DataInterval interval, String inputBucketName, String s3_key) throws IOException {
         Path targetDir = dataDir.resolve(interval.getDirName());
 
         // Check if we already have CSV files
@@ -69,21 +93,18 @@ public class DataFetcher {
             }
         }
 
-        String key = s3_path + "/" + symbol + "_" + provider + "_" + interval.getS3Path() + ".csv.lzo";
 
-        Path localLzoPath = Path.of(key.replace("/", "_"));
-        Path localCsvPath = Path.of(key.replace("/", "_").replace(".csv.lzo", ".csv"));
+        Path localLzoPath = Path.of(s3_key.replace("/", "_"));
+        Path localCsvPath = Path.of(s3_key.replace("/", "_").replace(".csv.lzo", ".csv"));
 
-        log.info("Fetching {} from S3: {}", interval.getName(), key);
+        log.info("Fetching {} from S3: {}", interval.getName(), s3_key);
 
-        downloadFromS3(key, localLzoPath, inputBucketName);
+        downloadFromS3(s3_key, localLzoPath, inputBucketName);
         // Try up to 3 times to decompress
         decompressLzo(localLzoPath, localCsvPath);
         // Delete the LZO file after successful decompression
         Files.deleteIfExists(localLzoPath);
-        return new FetchResult(localCsvPath, key);
-
-
+        return new FetchResult(localCsvPath, s3_key);
     }
 
     private void downloadFromS3(String s3Path, Path localPath, String inputBucketName) {
@@ -152,6 +173,6 @@ public class DataFetcher {
     static class DataInterval {
         private String name;
         private String dirName;
-        private String s3Path;
+        // s3Path field removed as it's no longer needed
     }
 }
