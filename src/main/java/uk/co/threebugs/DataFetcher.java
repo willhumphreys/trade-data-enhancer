@@ -5,7 +5,7 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.*;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import uk.co.threebugs.preconvert.PolygonDataConverter;
 
 import java.io.BufferedReader;
@@ -22,11 +22,7 @@ public class DataFetcher {
     private final String symbol;
     private final String provider;
     private final Path dataDir;
-    private final List<DataInterval> intervals = Arrays.asList(
-            DataInterval.builder().name("1min").dirName("minute").s3Path("1min").build(),
-            DataInterval.builder().name("1hour").dirName("hourly").s3Path("1hour").build(),
-            DataInterval.builder().name("1day").dirName("daily").s3Path("1day").build()
-    );
+    private final List<DataInterval> intervals = Arrays.asList(DataInterval.builder().name("1min").dirName("minute").s3Path("1min").build(), DataInterval.builder().name("1hour").dirName("hourly").s3Path("1hour").build(), DataInterval.builder().name("1day").dirName("daily").s3Path("1day").build());
 
     public DataFetcher(String symbol, String provider, Path dataDir, S3Client s3Client) {
         this.symbol = symbol != null ? symbol : "AAPL";
@@ -50,16 +46,10 @@ public class DataFetcher {
 
         for (DataInterval interval : intervals) {
             FetchResult dataFile = fetchIntervalData(interval, inputBucketName, s3_path);
-            if (dataFile != null) {
+            Path fixedDataFile = dataFile.getLocalPath().resolveSibling(dataFile.getLocalPath().getFileName() + "F.csv");
+            new PolygonDataConverter().convert(dataFile.getLocalPath(), fixedDataFile);
 
-                Path fixedDataFile = dataFile.getLocalPath().resolveSibling(dataFile.getLocalPath().getFileName() + "F.csv");
-                new PolygonDataConverter().convert(dataFile.getLocalPath(), fixedDataFile);
-
-                dataFiles.put(interval.getName(), new DataFileInfo(fixedDataFile, dataFile.getS3Path()));
-            } else {
-                log.error("Failed to fetch data for interval {}", interval.getName());
-                throw new IOException("Failed to fetch data for interval " + interval.getName());
-            }
+            dataFiles.put(interval.getName(), new DataFileInfo(fixedDataFile, dataFile.getS3Path()));
         }
 
         return dataFiles;
@@ -78,120 +68,31 @@ public class DataFetcher {
                 return new FetchResult(existingFile, null);
             }
         }
-        // Find the latest file in S3
-        //String s3Path = findLatestS3Path(interval, inputBucketName);
-        String s3Path = s3_path;
-        if (s3Path == null) {
-            log.error("No data found in S3 for {} {}", symbol, interval.getName());
-            return null;
-        }
 
-        // Download and decompress
-        String filename = s3Path.substring(s3Path.lastIndexOf('/') + 1);
-        Path localLzoPath = targetDir.resolve(filename);
-        Path localCsvPath = targetDir.resolve(filename.replace(".lzo", ""));
+        String key = s3_path + "/" + symbol + "_" + provider + "_" + interval.getS3Path() + ".csv.lzo";
+
+        Path localLzoPath = Path.of(key.replace("/", "_"));
+        Path localCsvPath = Path.of(key.replace("/", "_").replace(".csv.lzo", ".csv"));
+
+        log.info("Fetching {} from S3: {}", interval.getName(), key);
+
+        downloadFromS3(key, localLzoPath, inputBucketName);
+        // Try up to 3 times to decompress
+        decompressLzo(localLzoPath, localCsvPath);
+        // Delete the LZO file after successful decompression
+        Files.deleteIfExists(localLzoPath);
+        return new FetchResult(localCsvPath, key);
 
 
-        if (downloadFromS3(s3Path, localLzoPath, inputBucketName)) {
-            // Try up to 3 times to decompress
-            decompressLzo(localLzoPath, localCsvPath);
-            // Delete the LZO file after successful decompression
-            Files.deleteIfExists(localLzoPath);
-            return new FetchResult(localCsvPath, s3Path);
-        }
-
-        return null;
     }
 
-    // Class to hold both the local path and S3 path
-    @lombok.Value
-    public static class DataFileInfo {
-        Path localPath;
-        String s3Path;
-    }
+    private void downloadFromS3(String s3Path, Path localPath, String inputBucketName) {
 
-    @lombok.Value
-    private static class FetchResult {
-        Path localPath;
-        String s3Path;
-    }
+        log.info("Downloading {} to {}", s3Path, localPath);
 
-    private String findLatestS3Path(DataInterval interval, String inputBucketName) {
-        String prefix = String.format("stocks/%s/%s/%s/", symbol, provider, interval.getS3Path());
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder().bucket(inputBucketName).key(s3Path).build();
 
-        try {
-            // Find latest year
-            String latestYear = findLatestDirectory(prefix, inputBucketName);
-            if (latestYear == null) return null;
-
-            // Find latest month
-            String monthPrefix = prefix + latestYear + "/";
-            String latestMonth = findLatestDirectory(monthPrefix, inputBucketName);
-            if (latestMonth == null) return null;
-
-            // Find latest day
-            String dayPrefix = monthPrefix + latestMonth + "/";
-            String latestDay = findLatestDirectory(dayPrefix, inputBucketName);
-            if (latestDay == null) return null;
-
-            if ("1min".equals(interval.getS3Path())) {
-                // For minute data, we need to find latest hour too
-                String hourPrefix = dayPrefix + latestDay + "/";
-                String latestHour = findLatestDirectory(hourPrefix, inputBucketName);
-                if (latestHour == null) return null;
-
-                // Find latest file
-                String filePrefix = hourPrefix + latestHour + "/";
-                return findLatestFile(filePrefix, ".lzo", inputBucketName);
-            } else {
-                // For hourly/daily just find latest file
-                String filePrefix = dayPrefix + latestDay + "/";
-                return findLatestFile(filePrefix, ".lzo", inputBucketName);
-            }
-        } catch (Exception e) {
-            log.error("Error finding latest S3 path for {}", interval.getName(), e);
-            return null;
-        }
-    }
-
-    private String findLatestDirectory(String prefix, String inputBucketName) {
-        try {
-            ListObjectsV2Request request = ListObjectsV2Request.builder().bucket(inputBucketName).prefix(prefix).delimiter("/").build();
-
-            ListObjectsV2Response response = s3Client.listObjectsV2(request);
-
-            return response.commonPrefixes().stream().map(CommonPrefix::prefix).map(p -> p.replace(prefix, "").replace("/", "")).max(Comparator.naturalOrder()).orElse(null);
-        } catch (Exception e) {
-            log.error("Error listing directories at {}", prefix, e);
-            return null;
-        }
-    }
-
-    private String findLatestFile(String prefix, String suffix, String inputBucketName) {
-        try {
-            ListObjectsV2Request request = ListObjectsV2Request.builder().bucket(inputBucketName).prefix(prefix).build();
-
-            ListObjectsV2Response response = s3Client.listObjectsV2(request);
-
-            return response.contents().stream().filter(s3Object -> s3Object.key().endsWith(suffix)).max(Comparator.comparing(S3Object::lastModified)).map(S3Object::key).orElse(null);
-        } catch (Exception e) {
-            log.error("Error finding latest file at {}", prefix, e);
-            return null;
-        }
-    }
-
-    private boolean downloadFromS3(String s3Path, Path localPath, String inputBucketName) {
-        try {
-            log.info("Downloading {} to {}", s3Path, localPath);
-
-            GetObjectRequest getObjectRequest = GetObjectRequest.builder().bucket(inputBucketName).key(s3Path).build();
-
-            s3Client.getObject(getObjectRequest, ResponseTransformer.toFile(localPath.toFile()));
-            return true;
-        } catch (Exception e) {
-            log.error("Failed to download {}", s3Path, e);
-            return false;
-        }
+        s3Client.getObject(getObjectRequest, ResponseTransformer.toFile(localPath.toFile()));
     }
 
     private void decompressLzo(Path lzoPath, Path csvPath) throws IOException {
@@ -204,9 +105,7 @@ public class DataFetcher {
         }
 
         // Use lzop command-line tool for decompression
-        ProcessBuilder processBuilder = new ProcessBuilder(
-                "lzop", "-d", "-f", "-o", csvPath.toString(), lzoPath.toString()
-        );
+        ProcessBuilder processBuilder = new ProcessBuilder("lzop", "-d", "-f", "-o", csvPath.toString(), lzoPath.toString());
 
         processBuilder.redirectErrorStream(true);
         Process process = processBuilder.start();
@@ -233,6 +132,19 @@ public class DataFetcher {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while waiting for lzop process", e);
         }
+    }
+
+    // Class to hold both the local path and S3 path
+    @lombok.Value
+    public static class DataFileInfo {
+        Path localPath;
+        String s3Path;
+    }
+
+    @lombok.Value
+    private static class FetchResult {
+        Path localPath;
+        String s3Path;
     }
 
     @Data
