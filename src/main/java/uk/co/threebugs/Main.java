@@ -15,197 +15,223 @@ import java.util.Objects;
 @Slf4j
 public class Main {
 
-    public static void main(String[] args) throws IOException {
-        Options options = new Options();
-        options.addOption("w", "window", true, "ATR window size");
-        options.addOption("f", "file", true, "Input file name");
-        options.addOption("t", "ticker", true, "Symbol (e.g., AAPL)");
-        options.addOption("p", "provider", true, "Data provider (e.g., polygon)");
-        options.addOption("m", "s3_key_min", true, "s3_key_min");
-        options.addOption("h", "s3_key_hour", true, "s3_key_min");
-        options.addOption("d", "s3_key_day", true, "s3_key_min");
+    public static void main(String[] args) {
 
 
+        try {
+            processCommandLine(args);
+        } catch (Exception e) {
+            // Log the error with full stack trace for debugging
+            log.error("Application failed:", e);
+            // The JVM will exit with a non-zero status because of the unhandled exception
+        }
+
+    }
+
+
+    /**
+     * Process command line arguments and execute the application logic
+     *
+     * @param args Command-line arguments
+     * @throws Exception if any error occurs during processing
+     */
+    private static void processCommandLine(String[] args) throws Exception {
+        // Create command line options
+        Options options = createOptions();
         CommandLineParser parser = new DefaultParser();
         HelpFormatter formatter = new HelpFormatter();
         CommandLine cmd;
 
-        S3Client s3Client = S3Client.builder().region(Region.EU_CENTRAL_1).build();
-
         try {
             cmd = parser.parse(options, args);
-
-            if (cmd.hasOption("h")) {
-                formatter.printHelp("Main", options);
-                System.exit(0);
-            }
-
-            int atrWindow = Integer.parseInt(cmd.getOptionValue("w", "14"));
-            String fileName = cmd.getOptionValue("f");
-            options.addOption("t", "ticker", true, "Ticker symbol to process");
-            options.addOption("p", "provider", true, "Data provider");
-
-
-            String inputBucket = System.getenv("INPUT_BUCKET_NAME");
-            String outputBucket = System.getenv("OUTPUT_BUCKET_NAME");
-
-            String s3_key_min;
-            if (cmd.hasOption("m")) {
-                s3_key_min = cmd.getOptionValue("m");
-            } else {
-                throw new IllegalArgumentException("S3 key min path must be specified.");
-            }
-
-            String s3_key_hour;
-            if (cmd.hasOption("h")) {
-                s3_key_hour = cmd.getOptionValue("h");
-            } else {
-                throw new IllegalArgumentException("S3 key hour path must be specified.");
-            }
-
-            String s3_key_day;
-            if (cmd.hasOption("d")) {
-                s3_key_day = cmd.getOptionValue("d");
-            } else {
-                throw new IllegalArgumentException("S3 key day path must be specified.");
-            }
-
-            String ticker;
-            if (cmd.hasOption("t")) {
-                ticker = cmd.getOptionValue("t");
-            } else {
-                throw new IllegalArgumentException("Ticker symbol must be specified.");
-            }
-
-            String provider;
-            if (cmd.hasOption("p")) {
-                provider = cmd.getOptionValue("p");
-            } else {
-                throw new IllegalArgumentException("Data provider must be specified.");
-            }
-
-            if (inputBucket == null) {
-                log.error("Input bucket name not specified. Set an environmental variable with the value INPUT_BUCKET_NAME. Aborting.");
-                System.exit(1);
-            }
-
-            if (outputBucket == null) {
-                log.error("Output bucket name not specified. Set an environmental variable with the value OUTPUT_BUCKET_NAME Aborting.");
-                System.exit(1);
-            }
-
-            // Data directories
-            Path dataDir = Paths.get("data");
-            Files.createDirectories(dataDir);
-            Path minuteDir = dataDir.resolve("minute");
-            Path hourlyDir = dataDir.resolve("hourly");
-            Path dailyDir = dataDir.resolve("daily");
-            Files.createDirectories(minuteDir);
-            Files.createDirectories(hourlyDir);
-            Files.createDirectories(dailyDir);
-
-            // Output directory
-            Path outputDirectory = Paths.get("output");
-            Files.createDirectories(outputDirectory);
-
-            // If no file was specified or the file doesn't exist, fetch from S3
-            DataFetcher.DataFileInfo minuteDataPath;
-            DataFetcher.DataFileInfo hourlyDataPath;
-            DataFetcher.DataFileInfo dailyDataPath;
-
-            if (fileName == null || !Files.exists(minuteDir.resolve(fileName))) {
-                log.info("Data file not specified or not found. Attempting to fetch from S3...");
-
-                DataFetcher dataFetcher = new DataFetcher(ticker, provider, dataDir, s3Client);
-                Map<String, DataFetcher.DataFileInfo> dataFiles = dataFetcher.fetchData(inputBucket, s3_key_min, s3_key_hour, s3_key_day);
-
-                if (dataFiles.isEmpty()) {
-                    log.error("Failed to fetch required data files. Aborting.");
-                    System.exit(1);
-                }
-
-                minuteDataPath = dataFiles.get("1min");
-                hourlyDataPath = dataFiles.get("1hour");
-                dailyDataPath = dataFiles.get("1day");
-
-                log.info("Successfully fetched data files:");
-            } else {
-                minuteDataPath = new DataFetcher.DataFileInfo(minuteDir.resolve(fileName), null);
-                // Use default naming pattern for related files when only minute file is specified
-                String baseName = fileName.replaceAll("_1-min_", "_");
-                hourlyDataPath = new DataFetcher.DataFileInfo(hourlyDir.resolve(baseName.replaceAll("\\.csv$", "_1-hour.csv")), null);
-                dailyDataPath = new DataFetcher.DataFileInfo(dailyDir.resolve(baseName.replaceAll("\\.csv$", "_1-day.csv")), null);
-
-                log.info("Using specified data files:");
-            }
-
-            log.info("  Minute data: {}", minuteDataPath);
-            log.info("  Hourly data: {}", hourlyDataPath);
-            log.info("  Daily data: {}", dailyDataPath);
-
-            // Extract filenames from paths
-            String minuteDataFile = minuteDataPath.getLocalPath().getFileName().toString();
-            String hourlyDataFile = hourlyDataPath.getLocalPath().getFileName().toString();
-            String dailyDataFile = dailyDataPath.getLocalPath().getFileName().toString();
-
-            // Instance of the trimmer
-            MinuteDataTrimmer trimmer = new MinuteDataTrimmer();
-
-            // Output paths for intermediate processing
-            var processedMinutePaths = new ProcessedPaths(minuteDataFile, outputDirectory);
-            var processedHourlyPaths = new ProcessedPaths(hourlyDataFile, outputDirectory);
-            var processedDailyPaths = new ProcessedPaths(dailyDataFile, outputDirectory);
-
-            // Trim the minute data
-            trimmer.trimMinuteData(minuteDataPath.getLocalPath(), hourlyDataPath.getLocalPath(), processedMinutePaths.trimmedMinuteOutput);
-
-            log.info("Minute data successfully trimmed and written to {}.", processedMinutePaths.trimmedMinuteOutput);
-
-            log.info("Starting data processing for Minute Data: {} and Hourly Data: {}",
-                    processedMinutePaths.trimmedMinuteOutput, hourlyDataFile);
-
-            // Process minute data (validation, decimal shift, and timestamp check)
-            processMinuteData(processedMinutePaths.trimmedMinuteOutput, processedMinutePaths);
-
-            // Process hourly data (validation, decimal shift, and timestamp check)
-            processData(hourlyDataPath.getLocalPath(), atrWindow,
-                    processedHourlyPaths.validated,
-                    processedHourlyPaths.invalid,
-                    processedHourlyPaths.decimalShifted,
-                    processedHourlyPaths.sorted,
-                    processedHourlyPaths.deduplicated,
-                    processedHourlyPaths.timeFrameAtrOutput,
-                    "Hourly");
-
-            // Process daily data
-            processData(dailyDataPath.getLocalPath(), 14,
-                    processedDailyPaths.validated,
-                    processedDailyPaths.invalid,
-                    processedDailyPaths.decimalShifted,
-                    processedDailyPaths.sorted,
-                    processedDailyPaths.deduplicated,
-                    processedDailyPaths.timeFrameAtrOutput,
-                    "Daily");
-
-            // Combine hourly and minute data for integrity check
-            performDataIntegrityCheck(
-                    processedMinutePaths.decimalShifted,
-                    processedMinutePaths.hourlyChecked,
-                    processedDailyPaths.timeFrameAtrOutput,
-                    processedMinutePaths.atrOutput);
-
-            // Additional processing for ATR and formatting
-            Path inputPath = performAdditionalProcessing(processedMinutePaths);
-
-            String s3Key = new DataUploader(s3Client).uploadMinuteData(inputPath, outputBucket, minuteDataPath.getS3Path());
-
-            log.info("Data successfully uploaded to S3. S3 key: {}", s3Key);
-
         } catch (ParseException e) {
-            log.error("Error parsing command line arguments", e);
+            log.error("Error parsing command line arguments: {}", e.getMessage());
             formatter.printHelp("Main", options);
+            throw new IllegalArgumentException("Failed to parse command line arguments", e);
+        }
+
+        // Check if we have any arguments at all
+        if (args.length == 0) {
+            formatter.printHelp("Main", options);
+            throw new IllegalArgumentException("No command line arguments provided");
+        }
+
+        // Extract required options with validation
+        String ticker = validateRequiredOption(cmd, "ticker", "ticker symbol");
+        String provider = validateRequiredOption(cmd, "provider", "provider");
+        String s3KeyMin = validateRequiredOption(cmd, "s3_key_min", "S3 key for minute data");
+        String s3KeyHour = validateRequiredOption(cmd, "s3_key_hour", "S3 key for hourly data");
+        String s3KeyDay = validateRequiredOption(cmd, "s3_key_day", "S3 key for daily data");
+
+
+        // Extract optional options
+        int atrWindow = Integer.parseInt(cmd.getOptionValue("w", "14")); // Default to 14 if not provided
+
+        // Read environment variables for bucket names
+        String inputBucketName = System.getenv("INPUT_BUCKET_NAME");
+        String outputBucketName = System.getenv("OUTPUT_BUCKET_NAME");
+
+        // Check if environment variables are available
+        if (inputBucketName == null || inputBucketName.isEmpty()) {
+            throw new IllegalStateException("INPUT_BUCKET_NAME environment variable is not set");
+        }
+
+        if (outputBucketName == null || outputBucketName.isEmpty()) {
+            throw new IllegalStateException("OUTPUT_BUCKET_NAME environment variable is not set");
+        }
+
+        // Log the values for debugging
+        log.info("Starting processing with parameters:");
+        log.info("  Ticker: {}", ticker);
+        log.info("  Provider: {}", provider);
+        log.info("  S3 Key Min: {}", s3KeyMin);
+        log.info("  S3 Key Hour: {}", s3KeyHour);
+        log.info("  S3 Key Day: {}", s3KeyDay);
+        log.info("  ATR Window: {}", atrWindow);
+        log.info("  Input Bucket: {}", inputBucketName);
+        log.info("  Output Bucket: {}", outputBucketName);
+
+
+        // Continue with your application logic
+        // This is where you'd call the data processing methods
+        executeDataProcessing(ticker, provider, s3KeyMin, s3KeyHour, s3KeyDay, atrWindow, inputBucketName, outputBucketName);
+    }
+
+    /**
+     * Execute the core data processing logic
+     */
+    private static void executeDataProcessing(String ticker, String provider, String s3KeyMin, String s3KeyHour, String s3KeyDay, int atrWindow, String inputBucketName, String outputBucketName) throws IOException {
+
+        // Initialize S3 client
+        S3Client s3Client = S3Client.builder().region(Region.EU_CENTRAL_1) // Adjust region as needed
+                .build();
+
+        // Data directories
+        Path dataDir = Paths.get(System.getProperty("user.dir"), "data");
+        Files.createDirectories(dataDir);
+
+
+        // Initialize DataFetcher
+        DataFetcher dataFetcher = new DataFetcher(ticker, provider, dataDir, s3Client);
+
+        // Fetch data from S3 using the input bucket name and S3 keys
+        Map<String, DataFetcher.DataFileInfo> dataFiles = dataFetcher.fetchData(inputBucketName, s3KeyMin, s3KeyHour, s3KeyDay);
+
+
+        Files.createDirectories(dataDir);
+        Path minuteDir = dataDir.resolve("minute");
+        Path hourlyDir = dataDir.resolve("hourly");
+        Path dailyDir = dataDir.resolve("daily");
+        Files.createDirectories(minuteDir);
+        Files.createDirectories(hourlyDir);
+        Files.createDirectories(dailyDir);
+
+        // Output directory
+        Path outputDirectory = Paths.get("output");
+        Files.createDirectories(outputDirectory);
+
+        // If no file was specified or the file doesn't exist, fetch from S3
+        DataFetcher.DataFileInfo minuteDataPath;
+        DataFetcher.DataFileInfo hourlyDataPath;
+        DataFetcher.DataFileInfo dailyDataPath;
+
+        log.info("Data file not specified or not found. Attempting to fetch from S3...");
+
+        if (dataFiles.isEmpty()) {
+            log.error("Failed to fetch required data files. Aborting.");
             System.exit(1);
         }
+
+        minuteDataPath = dataFiles.get("1min");
+        hourlyDataPath = dataFiles.get("1hour");
+        dailyDataPath = dataFiles.get("1day");
+
+        log.info("Successfully fetched data files:");
+
+
+        log.info("  Minute data: {}", minuteDataPath);
+        log.info("  Hourly data: {}", hourlyDataPath);
+        log.info("  Daily data: {}", dailyDataPath);
+
+        // Extract filenames from paths
+        String minuteDataFile = minuteDataPath.getLocalPath().getFileName().toString();
+        String hourlyDataFile = hourlyDataPath.getLocalPath().getFileName().toString();
+        String dailyDataFile = dailyDataPath.getLocalPath().getFileName().toString();
+
+        // Instance of the trimmer
+        MinuteDataTrimmer trimmer = new MinuteDataTrimmer();
+
+        // Output paths for intermediate processing
+        var processedMinutePaths = new ProcessedPaths(minuteDataFile, outputDirectory);
+        var processedHourlyPaths = new ProcessedPaths(hourlyDataFile, outputDirectory);
+        var processedDailyPaths = new ProcessedPaths(dailyDataFile, outputDirectory);
+
+        // Trim the minute data
+        trimmer.trimMinuteData(minuteDataPath.getLocalPath(), hourlyDataPath.getLocalPath(), processedMinutePaths.trimmedMinuteOutput);
+
+        log.info("Minute data successfully trimmed and written to {}.", processedMinutePaths.trimmedMinuteOutput);
+
+        log.info("Starting data processing for Minute Data: {} and Hourly Data: {}", processedMinutePaths.trimmedMinuteOutput, hourlyDataFile);
+
+        // Process minute data (validation, decimal shift, and timestamp check)
+        processMinuteData(processedMinutePaths.trimmedMinuteOutput, processedMinutePaths);
+
+        // Process hourly data (validation, decimal shift, and timestamp check)
+        processData(hourlyDataPath.getLocalPath(), atrWindow, processedHourlyPaths.validated, processedHourlyPaths.invalid, processedHourlyPaths.decimalShifted, processedHourlyPaths.sorted, processedHourlyPaths.deduplicated, processedHourlyPaths.timeFrameAtrOutput, "Hourly");
+
+        // Process daily data
+        processData(dailyDataPath.getLocalPath(), 14, processedDailyPaths.validated, processedDailyPaths.invalid, processedDailyPaths.decimalShifted, processedDailyPaths.sorted, processedDailyPaths.deduplicated, processedDailyPaths.timeFrameAtrOutput, "Daily");
+
+        // Combine hourly and minute data for integrity check
+        performDataIntegrityCheck(processedMinutePaths.decimalShifted, processedMinutePaths.hourlyChecked, processedDailyPaths.timeFrameAtrOutput, processedMinutePaths.atrOutput);
+
+        // Additional processing for ATR and formatting
+        Path inputPath = performAdditionalProcessing(processedMinutePaths);
+
+        String s3Key = new DataUploader(s3Client).uploadMinuteData(inputPath, outputBucketName, minuteDataPath.getS3Path());
+
+        log.info("Data successfully uploaded to S3. S3 key: {}", s3Key);
+
+
+    }
+
+    /**
+     * Validates that a required option is present and has a value
+     *
+     * @param cmd         Command line
+     * @param opt         Option name
+     * @param description Description for error reporting
+     * @return The option value
+     * @throws IllegalArgumentException if the option is missing
+     */
+    private static String validateRequiredOption(CommandLine cmd, String opt, String description) {
+        if (!cmd.hasOption(opt)) {
+            String errorMsg = "Missing required option: " + opt + " (" + description + ")";
+            log.error(errorMsg);
+            throw new IllegalArgumentException(errorMsg);
+        }
+        return cmd.getOptionValue(opt);
+    }
+
+
+    private static Options createOptions() {
+        Options options = new Options();
+
+        options.addOption(Option.builder("t").longOpt("ticker").hasArg().desc("Symbol (e.g., AAPL)").required(true).build());
+
+        options.addOption(Option.builder("p").longOpt("provider").hasArg().desc("Data provider (e.g., polygon)").required(true).build());
+
+        options.addOption(Option.builder("m").longOpt("s3_key_min").hasArg().desc("S3 key for minute data").required(true).build());
+
+        options.addOption(Option.builder("h").longOpt("s3_key_hour").hasArg().desc("S3 key for hourly data").required(true).build());
+
+        options.addOption(Option.builder("d").longOpt("s3_key_day").hasArg().desc("S3 key for daily data").required(true).build());
+
+        options.addOption(Option.builder("w").longOpt("window").hasArg().desc("ATR window size (default: 14)").required(false).build());
+
+        options.addOption(Option.builder("f").longOpt("file").hasArg().desc("Input file name (optional)").required(false).build());
+
+        return options;
     }
 
 
