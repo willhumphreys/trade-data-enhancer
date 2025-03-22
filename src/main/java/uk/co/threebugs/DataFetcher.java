@@ -22,7 +22,11 @@ public class DataFetcher {
     private final String symbol;
     private final String provider;
     private final Path dataDir;
-    private final List<DataInterval> intervals = Arrays.asList(DataInterval.builder().name("1min").dirName("minute").s3Path("1min").build(), DataInterval.builder().name("1hour").dirName("hourly").s3Path("1hour").build(), DataInterval.builder().name("1day").dirName("daily").s3Path("1day").build());
+    private final List<DataInterval> intervals = Arrays.asList(
+            DataInterval.builder().name("1min").dirName("minute").s3Path("1min").build(),
+            DataInterval.builder().name("1hour").dirName("hourly").s3Path("1hour").build(),
+            DataInterval.builder().name("1day").dirName("daily").s3Path("1day").build()
+    );
 
     public DataFetcher(String symbol, String provider, Path dataDir, S3Client s3Client) {
         this.symbol = symbol != null ? symbol : "AAPL";
@@ -41,11 +45,11 @@ public class DataFetcher {
         }
     }
 
-    public Map<String, DataFileInfo> fetchData(String inputBucketName) throws IOException {
+    public Map<String, DataFileInfo> fetchData(String inputBucketName, String s3_path) throws IOException {
         Map<String, DataFileInfo> dataFiles = new HashMap<>();
 
         for (DataInterval interval : intervals) {
-            FetchResult dataFile = fetchIntervalData(interval, inputBucketName);
+            FetchResult dataFile = fetchIntervalData(interval, inputBucketName, s3_path);
             if (dataFile != null) {
 
                 Path fixedDataFile = dataFile.getLocalPath().resolveSibling(dataFile.getLocalPath().getFileName() + "F.csv");
@@ -61,7 +65,7 @@ public class DataFetcher {
         return dataFiles;
     }
 
-    private FetchResult fetchIntervalData(DataInterval interval, String inputBucketName) throws IOException {
+    private FetchResult fetchIntervalData(DataInterval interval, String inputBucketName, String s3_path) throws IOException {
         Path targetDir = dataDir.resolve(interval.getDirName());
 
         // Check if we already have CSV files
@@ -75,7 +79,8 @@ public class DataFetcher {
             }
         }
         // Find the latest file in S3
-        String s3Path = findLatestS3Path(interval, inputBucketName);
+        //String s3Path = findLatestS3Path(interval, inputBucketName);
+        String s3Path = s3_path;
         if (s3Path == null) {
             log.error("No data found in S3 for {} {}", symbol, interval.getName());
             return null;
