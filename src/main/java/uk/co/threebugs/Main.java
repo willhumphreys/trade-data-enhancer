@@ -181,7 +181,7 @@ public class Main {
             // Additional processing for ATR and formatting
             Path inputPath = performAdditionalProcessing(processedMinutePaths);
 
-            String s3Key = new DataUploader(s3Client).uploadMinuteData(inputPath, outputBucket, minuteDataPath.getS3Path().replace(".csv", "F.csv"));
+            String s3Key = new DataUploader(s3Client).uploadMinuteData(inputPath, outputBucket, minuteDataPath.getS3Path());
 
             log.info("Data successfully uploaded to S3. S3 key: {}", s3Key);
 
