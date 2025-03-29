@@ -15,19 +15,9 @@ import java.util.Objects;
 @Slf4j
 public class Main {
 
-    public static void main(String[] args) {
-
-
-        try {
+    public static void main(String[] args) throws Exception {
             processCommandLine(args);
-        } catch (Exception e) {
-            // Log the error with full stack trace for debugging
-            log.error("Application failed:", e);
-            // The JVM will exit with a non-zero status because of the unhandled exception
-        }
-
     }
-
 
     /**
      * Process command line arguments and execute the application logic
