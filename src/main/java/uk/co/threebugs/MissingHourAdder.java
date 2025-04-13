@@ -38,7 +38,7 @@ public class MissingHourAdder {
                 LocalDateTime currentTimestamp = LocalDateTime.parse(currentFields[indexDateTime], FORMATTER);
 
                 // Add missing rows for gaps between previous and current row timestamps
-                if (previousRow != null && previousTimestamp != null) {
+                if (previousRow != null) {
                     LocalDateTime nextExpectedTimestamp = previousTimestamp.plusHours(1).withMinute(0); // Set minutes to 0
                     while (nextExpectedTimestamp.isBefore(currentTimestamp)) {
                         // Write a generated row for each missing hour
