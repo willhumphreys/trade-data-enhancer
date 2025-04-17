@@ -29,9 +29,14 @@ dependencies {
     implementation("org.jetbrains:annotations:24.0.1")
     implementation("org.ta4j:ta4j-core:0.15")
 
-    // AWS SDK
-    implementation("software.amazon.awssdk:s3:2.23.21")
-    implementation("software.amazon.awssdk:ssm:2.23.21")
+
+    implementation(platform("software.amazon.awssdk:bom:2.31.23"))
+
+    // AWS SDK modules without versions
+    implementation("software.amazon.awssdk:s3")
+    implementation("software.amazon.awssdk:ssm")
+    implementation("software.amazon.awssdk:sso")         // For SSO support
+    implementation("software.amazon.awssdk:ssooidc")     // For SSO authentication
 
     // For LZO decompression
     implementation("org.anarres.lzo:lzo-core:1.0.6")

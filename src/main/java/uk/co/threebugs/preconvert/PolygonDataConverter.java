@@ -16,38 +16,87 @@ public class PolygonDataConverter implements SourceDataConverter {
             writer.write("Timestamp,Open,High,Low,Close,Volume");
             writer.newLine();
 
-            // Skip header line in input file
-            String line = reader.readLine();
+            // Read header line and find column indices
+            String headerLine = reader.readLine();
+            if (headerLine == null) {
+                return; // Empty file
+            }
+
+            String[] headers = headerLine.split(",");
+
+            // Find indices of required columns
+            int volumeIndex = findColumnIndex(headers, "v");
+            int vwapIndex = findColumnIndex(headers, "vw");  // vw is volume weighted average price
+            int openIndex = findColumnIndex(headers, "o");
+            int closeIndex = findColumnIndex(headers, "c");
+            int highIndex = findColumnIndex(headers, "h");
+            int lowIndex = findColumnIndex(headers, "l");
+            int timestampIndex = findColumnIndex(headers, "t");
+            int numTradesIndex = findColumnIndex(headers, "n");  // n is number of trades
+
+            // Check that all required columns were found
+            if (openIndex == -1 || closeIndex == -1 || highIndex == -1 ||
+                    lowIndex == -1 || volumeIndex == -1 || timestampIndex == -1) {
+                throw new IOException("Required columns missing from input file");
+            }
 
             // Process each line
+            String line;
             while ((line = reader.readLine()) != null) {
                 if (line.trim().isEmpty()) {
                     continue; // Skip empty lines
                 }
 
                 String[] parts = line.split(",");
-                if (parts.length < 8) {
+                if (parts.length < Math.max(Math.max(Math.max(openIndex, closeIndex),
+                                Math.max(highIndex, lowIndex)),
+                        Math.max(volumeIndex, timestampIndex)) + 1) {
                     continue; // Skip malformed lines
                 }
 
-                // Extract values from input format
-                double open = Double.parseDouble(parts[0]);
-                double high = Double.parseDouble(parts[1]);
-                double low = Double.parseDouble(parts[2]);
-                double close = Double.parseDouble(parts[3]);
-                double volume = Double.parseDouble(parts[4]);
+                try {
+                    // Extract values from input format using discovered indices
+                    double open = Double.parseDouble(parts[openIndex]);
+                    double high = Double.parseDouble(parts[highIndex]);
+                    double low = Double.parseDouble(parts[lowIndex]);
+                    double close = Double.parseDouble(parts[closeIndex]);
+                    double volume = Double.parseDouble(parts[volumeIndex]);
 
-                // Convert timestamp from milliseconds to seconds
-                long timestampMs = Long.parseLong(parts[6]);
-                double timestampSec = timestampMs / 1000.0;
+                    // Convert timestamp from milliseconds to seconds
+                    long timestampMs = Long.parseLong(parts[timestampIndex]);
+                    double timestampSec = timestampMs / 1000.0;
 
-                // Format output line
-                String outputLine = String.format("%.1f,%.2f,%.2f,%.2f,%.2f,%.2f",
-                        timestampSec, open, high, low, close, volume);
+                    // Directly concatenate values as strings to preserve decimal places
+                    String outputLine = timestampSec + "," +
+                            open + "," +
+                            high + "," +
+                            low + "," +
+                            close + "," +
+                            volume;
 
-                writer.write(outputLine);
-                writer.newLine();
+                    writer.write(outputLine);
+                    writer.newLine();
+                } catch (NumberFormatException e) {
+                    // Log error and continue with next line
+                    System.err.println("Error parsing line: " + line);
+                }
             }
         }
+    }
+
+    /**
+     * Helper method to find a column's index in the header array
+     *
+     * @param headers    Array of header strings
+     * @param columnName Name of column to find
+     * @return Index of the column or -1 if not found
+     */
+    private int findColumnIndex(String[] headers, String columnName) {
+        for (int i = 0; i < headers.length; i++) {
+            if (headers[i].trim().equalsIgnoreCase(columnName)) {
+                return i;
+            }
+        }
+        return -1;
     }
 }

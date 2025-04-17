@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -50,7 +49,7 @@ public class DecimalShifter {
                 refreshedReader.readLine(); // Skip header
                 String line;
                 while ((line = refreshedReader.readLine()) != null) {
-                    var updatedLine = shiftRow(line, columnIndices, maxDecimalPlaces);
+                    var updatedLine = RowShifter.shiftRow(line, columnIndices, maxDecimalPlaces);
                     writer.write(updatedLine);
                     writer.newLine();
                 }
@@ -99,26 +98,6 @@ public class DecimalShifter {
         return maxDecimalPlaces;
     }
 
-    private String shiftRow(String row, int[] columnIndices, int maxDecimalPlaces) {
-        var multiplier = BigDecimal.TEN.pow(maxDecimalPlaces);
-        var columns = row.split(",");
-        for (int columnIndex : columnIndices) {
-            if (columnIndex == -1 || columnIndex >= columns.length) {
-                continue;
-            }
-            try {
-                var value = new BigDecimal(columns[columnIndex].trim());
-                // Multiply and round, then format as non-scientific string
-                var shiftedValue = value.multiply(multiplier).setScale(0, RoundingMode.HALF_UP).toPlainString();
-                columns[columnIndex] = shiftedValue; // Use full numeric representation
-            } catch (NumberFormatException e) {
-                log.warn("Invalid or non-numeric value in row: {}", row);
-                throw new RuntimeException("Invalid or non-numeric value in row: " + row);
-            }
-        }
-        return String.join(",", columns);
-    }
-
     /**
      * Adjusts decimal places in the input file using a predefined shift value.
      *
@@ -148,7 +127,7 @@ public class DecimalShifter {
             // Apply the predefined decimal shift to all rows
             String line;
             while ((line = reader.readLine()) != null) {
-                var updatedLine = shiftRow(line, columnIndices, decimalShift);
+                var updatedLine = RowShifter.shiftRow(line, columnIndices, decimalShift);
                 writer.write(updatedLine);
                 writer.newLine();
             }
