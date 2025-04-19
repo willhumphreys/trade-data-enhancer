@@ -89,9 +89,13 @@ public class DecimalShifter {
                 }
                 try {
                     var value = new BigDecimal(columns[columnIndex].trim());
-                    maxDecimalPlaces = Math.max(maxDecimalPlaces, value.scale());
-                } catch (NumberFormatException row) {
-                    throw new RuntimeException("Invalid or non-numeric value in row: " + row);
+                    int scale = value.scale();
+                    if (scale > maxDecimalPlaces) {
+                        maxDecimalPlaces = scale;
+                        log.info("New maximum decimal places found: {} (value: {})", maxDecimalPlaces, value);
+                    }
+                } catch (NumberFormatException e) {
+                    throw new RuntimeException("Invalid or non-numeric value in row: " + line, e);
                 }
             }
         }
