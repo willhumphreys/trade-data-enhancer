@@ -6,6 +6,7 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -261,12 +262,18 @@ public class Main {
         log.info(timeFrame + " timestamps verified to be correct.");
 
         // Step 6: Append ATR values
-        log.info("Appending ATR values to hourly data...");
-        var atrAppender = new ATRAppender();
+        log.info("Appending ATR values to " + timeFrame + " data...");
+//      var atrAppender = new ATRAppender();
+
+
+        var atrScalingFactorAppender = new ATRScalingFactorAppender();
         var longReader = new BitcoinLongDataReader();
 
         var hourlyDataLong = longReader.readFile(deduplicated); // Read from deduplicated file
-        atrAppender.writeStreamToFile(atrAppender.appendATR(hourlyDataLong, atrWindow), hourlyAtrOutput);
+        int shortPeriod = 20;
+        int longPeriod = 42;
+        BigDecimal alpha = new BigDecimal("0.5");
+        atrScalingFactorAppender.writeStreamToFile(atrScalingFactorAppender.appendScalingFactor(hourlyDataLong, shortPeriod, longPeriod, alpha), hourlyAtrOutput);
         log.info("ATR values successfully added to " + timeFrame + " data.");
     }
 
