@@ -1,4 +1,4 @@
-// Create a new file src/test/java/uk/co/threebugs/ATRScalingFactorSpliteratorTest.java
+// In src/test/java/uk/co/threebugs/ATRScalingFactorSpliteratorTest.java
 package uk.co.threebugs;
 
 import org.junit.jupiter.api.Test;
@@ -49,7 +49,7 @@ class ATRScalingFactorSpliteratorTest {
     }
 
     @Test
-    void tryAdvance_onSingleElementIterator_producesOneElementWithNullFactor() {
+    void tryAdvance_onSingleElementIterator_producesOneElementWithDefaultFactor() {
         // Arrange
         List<ShiftedMinuteData> singleData = List.of(
                 createData(1L, 100, 110, 90, 105, 1000.0)
@@ -65,11 +65,11 @@ class ATRScalingFactorSpliteratorTest {
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0).minuteData()).isEqualTo(singleData.get(0));
-        assertThat(results.get(0).scalingFactor()).isNull();
+        assertThat(results.get(0).scalingFactor()).isEqualTo(BigDecimal.ONE); // Expect default factor 1
     }
 
     @Test
-    void tryAdvance_iteratorShorterThanLongPeriod_producesNullFactors() {
+    void tryAdvance_iteratorShorterThanLongPeriod_producesDefaultFactors() {
         // Arrange
         List<ShiftedMinuteData> shortData = List.of(
                 createData(1L, 100, 110, 90, 105, 1000.0),
@@ -85,8 +85,9 @@ class ATRScalingFactorSpliteratorTest {
 
         // Assert
         assertThat(results).hasSize(shortData.size());
+        // Expect default factor 1 for all elements as long period is not met
         assertThat(results).extracting(ShiftedMinuteDataWithScalingFactor::scalingFactor)
-                .containsOnlyNulls();
+                .containsOnly(BigDecimal.ONE);
         assertThat(results).extracting(ShiftedMinuteDataWithScalingFactor::minuteData)
                 .containsExactlyElementsOf(shortData);
     }
@@ -110,9 +111,11 @@ class ATRScalingFactorSpliteratorTest {
 
         // Assert
         assertThat(results).hasSize(data.size());
-        assertThat(results.get(0).scalingFactor()).isNull();
-        assertThat(results.get(1).scalingFactor()).isNull();
-        assertThat(results.get(2).scalingFactor()).isNull();
+        // Expect default factor 1 until long period is met
+        assertThat(results.get(0).scalingFactor()).isEqualTo(BigDecimal.ONE);
+        assertThat(results.get(1).scalingFactor()).isEqualTo(BigDecimal.ONE);
+        assertThat(results.get(2).scalingFactor()).isEqualTo(BigDecimal.ONE);
+        // Expect calculated factor for the last element
         assertThat(results.get(3).scalingFactor()).isCloseTo(expectedFactor4, within(PRECISION));
     }
 
@@ -124,38 +127,39 @@ class ATRScalingFactorSpliteratorTest {
                 createData(2L, 105, 115, 100, 112, 1100.0), // TR=15
                 createData(3L, 112, 120, 110, 118, 1200.0), // TR=10
                 createData(4L, 118, 125, 115, 122, 1300.0), // TR=10. factor=0.86363637
-                createData(5L, 122, 130, 120, 128, 1400.0)  // TR=10. factor=0.94444444
+                createData(5L, 122, 130, 120, 128, 1400.0)  // TR=10. factor=0.94444445
         );
         ATRScalingFactorSpliterator spliterator = new ATRScalingFactorSpliterator(
                 inputData.iterator(), SHORT_PERIOD, LONG_PERIOD, ALPHA, CALCULATION_SCALE
         );
         BigDecimal expectedFactor4 = new BigDecimal("0.86363637");
-        BigDecimal expectedFactor5 = new BigDecimal("0.94444444"); // Note: rounding might differ slightly
+        BigDecimal expectedFactor5 = new BigDecimal("0.94444445");
 
         // Act
         List<ShiftedMinuteDataWithScalingFactor> results = consumeSpliterator(spliterator);
 
         // Assert
         assertThat(results).hasSize(inputData.size());
-        assertThat(results.get(0).scalingFactor()).isNull();
-        assertThat(results.get(1).scalingFactor()).isNull();
-        assertThat(results.get(2).scalingFactor()).isNull();
+        // Expect default factor 1 until long period is met
+        assertThat(results.get(0).scalingFactor()).isEqualTo(BigDecimal.ONE);
+        assertThat(results.get(1).scalingFactor()).isEqualTo(BigDecimal.ONE);
+        assertThat(results.get(2).scalingFactor()).isEqualTo(BigDecimal.ONE);
+        // Expect calculated factors
         assertThat(results.get(3).scalingFactor()).isCloseTo(expectedFactor4, within(PRECISION));
-        // Adjusting expected value slightly based on potential rounding differences in calculation steps
-        assertThat(results.get(4).scalingFactor()).isCloseTo(new BigDecimal("0.94444445"), within(PRECISION));
+        assertThat(results.get(4).scalingFactor()).isCloseTo(expectedFactor5, within(PRECISION));
         assertThat(results).extracting(ShiftedMinuteDataWithScalingFactor::minuteData)
                 .containsExactlyElementsOf(inputData);
     }
 
     @Test
-    void tryAdvance_withZeroLongAtr_producesNullFactor() {
+    void tryAdvance_withZeroLongAtr_producesDefaultFactor() {
         // Arrange (Data from ATRScalingFactorAppenderTest)
         int shortP = 1;
         int longP = 2;
         List<ShiftedMinuteData> inputData = List.of(
                 createData(1L, 100, 110, 90, 105, 1000.0), // TR = 20
                 createData(2L, 105, 105, 105, 105, 1100.0), // TR = 0. shortATR=0, longATR=10, factor=0.5
-                createData(3L, 105, 105, 105, 105, 1200.0)  // TR = 0. shortATR=0, longATR=0, factor=null
+                createData(3L, 105, 105, 105, 105, 1200.0)  // TR = 0. shortATR=0, longATR=0, factor=1 (default)
         );
         ATRScalingFactorSpliterator spliterator = new ATRScalingFactorSpliterator(
                 inputData.iterator(), shortP, longP, ALPHA, CALCULATION_SCALE
@@ -167,9 +171,9 @@ class ATRScalingFactorSpliteratorTest {
 
         // Assert
         assertThat(results).hasSize(inputData.size());
-        assertThat(results.get(0).scalingFactor()).isNull(); // Not enough data for long ATR
-        assertThat(results.get(1).scalingFactor()).isCloseTo(expectedFactor2, within(PRECISION));
-        assertThat(results.get(2).scalingFactor()).isNull(); // Long ATR becomes zero
+        assertThat(results.get(0).scalingFactor()).isEqualTo(BigDecimal.ONE); // Not enough data for long ATR -> default 1
+        assertThat(results.get(1).scalingFactor()).isCloseTo(expectedFactor2, within(PRECISION)); // Calculated
+        assertThat(results.get(2).scalingFactor()).isEqualTo(BigDecimal.ONE); // Long ATR becomes zero -> default 1
     }
 
     @Test
@@ -198,8 +202,6 @@ class ATRScalingFactorSpliteratorTest {
         // Act & Assert
         assertThat(spliterator.characteristics())
                 .isEqualTo(Spliterator.ORDERED | Spliterator.NONNULL | Spliterator.IMMUTABLE);
-        // IMMUTABLE refers to the source, not the spliterator's internal state.
-        // NONNULL assumes the source iterator doesn't yield null ShiftedMinuteData.
     }
 
     @Test

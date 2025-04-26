@@ -1,3 +1,4 @@
+// In src/test/java/uk/co/threebugs/ATRScalingFactorAppenderIntegrationTest.java
 package uk.co.threebugs;
 
 import org.junit.jupiter.api.Test;
@@ -36,12 +37,14 @@ class ATRScalingFactorAppenderIntegrationTest {
         );
 
         // Expected output content (including header and formatted data)
-        // Factors calculated in the unit test: null, null, null, 0.86363637, 0.94444444
+        // Factors: 1 (default), 1 (default), 1 (default), 0.86363637, 0.94444445
+        // Default factor 1 is formatted to 8 decimal places by formatDataEntry
+        String defaultFactorString = "1.00000000";
         List<String> expectedOutputLines = List.of(
                 "Timestamp,open,high,low,close,volume,scalingFactor",
-                "1,100,110,90,105,1000.00,", // Null factor -> empty string
-                "2,105,115,100,112,1100.00,", // Null factor -> empty string
-                "3,112,120,110,118,1200.00,", // Null factor -> empty string
+                "1,100,110,90,105,1000.00," + defaultFactorString, // Default factor 1
+                "2,105,115,100,112,1100.00," + defaultFactorString, // Default factor 1
+                "3,112,120,110,118,1200.00," + defaultFactorString, // Default factor 1
                 "4,118,125,115,122,1300.00,0.86363637",
                 "5,122,130,120,128,1400.00,0.94444445"
         );
