@@ -3,12 +3,11 @@ package uk.co.threebugs;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class HourlyDataChecker {
 
@@ -102,143 +101,71 @@ public class HourlyDataChecker {
         outputLines.addAll(outputData.stream().map(RowData::toCsvLine).toList());
         Files.write(outputPath, outputLines);
 
-        return hoursInsertedCounter; // Return count of hours inserted
+        return hoursInsertedCounter;
     }
 
-    // existing methods (parseRows, parseHourlyRows, alignToStartOfHour, etc.) remain unchanged...
-
-    /**
-     * Helper class to represent a row of data.
-     */
-    private static class RowData {
-        // DateTimeFormatter for UTC date conversion
-        private static final DateTimeFormatter UTC_DATE_FORMATTER =
-                DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
-        long timestamp;
-        long open;
-        long high;
-        long low;
-        long close;
-        double volume;
-
-        RowData(long timestamp, long open, long high, long low, long close, double volume) {
-            this.timestamp = timestamp;
-            this.open = open;
-            this.high = high;
-            this.low = low;
-            this.close = close;
-            this.volume = volume;
-        }
-
-        static RowData fromCsvLine(String line) {
-            String[] parts = line.split(",");
-            return new RowData(
-                    (long) Double.parseDouble(parts[0]),
-                    Long.parseLong(parts[1]),
-                    Long.parseLong(parts[2]),
-                    Long.parseLong(parts[3]),
-                    Long.parseLong(parts[4]),
-                    Double.parseDouble(parts[5])
-            );
-        }
-
-
-        /**
-         * Converts the RowData to a CSV line, including the UTC date as the last column.
-         */
-        String toCsvLine() {
-            return String.format("%d.0,%d,%d,%d,%d,%f",
-                    this.timestamp, this.open, this.high, this.low, this.close, this.volume);
-        }
-    }
-    // existing methods (parseRows, parseHourlyRows, alignToStartOfHour, etc.) remain unchanged...
-
-    /**
-     * Helper method to parse rows from the minute or hourly data.
-     */
+    // Parses rows from CSV lines into RowData objects
     private List<RowData> parseRows(List<String> lines) {
-        List<RowData> data = new ArrayList<>();
-        for (String line : lines) {
-            data.add(RowData.fromCsvLine(line));
-        }
-        return data;
+        return lines.stream().map(line -> {
+            String[] parts = line.split(",");
+            // Assuming timestamp is the first column and volume is the last
+            return new RowData(
+                    Double.parseDouble(parts[0]), // Timestamp
+                    Long.parseLong(parts[1]),     // Open
+                    Long.parseLong(parts[2]),     // High
+                    Long.parseLong(parts[3]),     // Low
+                    Long.parseLong(parts[4]),     // Close
+                    Double.parseDouble(parts[5])  // Volume
+            );
+        }).collect(Collectors.toList());
     }
 
-    /**
-     * Helper method to parse rows from hourly data into a map (key: timestamp).
-     */
+    // Parses hourly rows into a map keyed by timestamp
     private Map<Long, RowData> parseHourlyRows(List<String> lines) {
-        Map<Long, RowData> hourlyData = new HashMap<>();
+        Map<Long, RowData> hourlyMap = new HashMap<>();
         for (String line : lines) {
-            RowData row = RowData.fromCsvLine(line);
-            hourlyData.put(row.timestamp, row);
+            String[] parts = line.split(",");
+            long timestamp = (long) Double.parseDouble(parts[0]); // Convert to long for key
+            RowData row = new RowData(
+                    timestamp,                    // Use the long timestamp
+                    Long.parseLong(parts[1]),     // Open
+                    Long.parseLong(parts[2]),     // High
+                    Long.parseLong(parts[3]),     // Low
+                    Long.parseLong(parts[4]),     // Close
+                    Double.parseDouble(parts[5])  // Volume
+            );
+            hourlyMap.put(timestamp, row);
         }
-        return hourlyData;
+        return hourlyMap;
     }
 
-    /**
-     * Aligns a timestamp to the start of its hour.
-     */
-    private long alignToStartOfHour(long timestamp) {
-        return (timestamp / 3600) * 3600;
+    // Aligns a timestamp (double) to the start of its hour (long)
+    private long alignToStartOfHour(double timestamp) {
+        return ((long) timestamp / 3600) * 3600;
     }
 
-    /**
-     * Checks if there is a gap of hours between previous and current timestamps.
-     */
-    private boolean hasHourGap(long previousTimestamp, long currentTimestamp) {
-        return (alignToStartOfHour(currentTimestamp) - alignToStartOfHour(previousTimestamp)) > 3600;
+    // Checks if two timestamps fall into different hours
+    private boolean isNewHour(double timestamp1, double timestamp2) {
+        return alignToStartOfHour(timestamp1) != alignToStartOfHour(timestamp2);
     }
 
-    /**
-     * Checks if the current timestamp represents a transition to a new hour.
-     */
-    private boolean isNewHour(long previousTimestamp, long currentTimestamp) {
-        return alignToStartOfHour(previousTimestamp) != alignToStartOfHour(currentTimestamp);
+    // Checks if a timestamp is exactly at the start of an hour
+    private boolean isAlignedToHour(double timestamp) {
+        return timestamp % 3600 == 0;
     }
 
-    /**
-     * Checks if a given timestamp is aligned to the start of an hour.
-     */
-    private boolean isAlignedToHour(long timestamp) {
-        return (timestamp % 3600) == 0;
+    // Checks if there's a gap of one or more full hours between two timestamps
+    private boolean hasHourGap(double timestamp1, double timestamp2) {
+        return alignToStartOfHour(timestamp2) > alignToStartOfHour(timestamp1) + 3600;
     }
 
-//    /**
-//     * Helper class to represent a row of data.
-//     */
-//    private static class RowData {
-//        long timestamp;
-//        long open;
-//        long high;
-//        long low;
-//        long close;
-//        double volume;
-//
-//        RowData(long timestamp, long open, long high, long low, long close, double volume) {
-//            this.timestamp = timestamp;
-//            this.open = open;
-//            this.high = high;
-//            this.low = low;
-//            this.close = close;
-//            this.volume = volume;
-//        }
-//
-//        static RowData fromCsvLine(String line) {
-//            String[] parts = line.split(",");
-//            return new RowData(
-//                    (long) Double.parseDouble(parts[0]),
-//                    Long.parseLong(parts[1]),
-//                    Long.parseLong(parts[2]),
-//                    Long.parseLong(parts[3]),
-//                    Long.parseLong(parts[4]),
-//                    Double.parseDouble(parts[5])
-//            );
-//        }
-//
-//        String toCsvLine() {
-//            return String.format("%d.0,%d,%d,%d,%d,%f",
-//                    this.timestamp, this.open, this.high, this.low, this.close, this.volume);
-//        }
-//    }
+    // Inner record to hold row data
+    private record RowData(double timestamp, long open, long high, long low, long close, double volume) {
+        // Format the row data into a CSV line, ensuring timestamp is a long integer string
+        public String toCsvLine() {
+            // Format timestamp as long (%d) to remove the decimal part
+            return String.format("%d,%d,%d,%d,%d,%.6f",
+                    (long) timestamp, open, high, low, close, volume);
+        }
+    }
 }

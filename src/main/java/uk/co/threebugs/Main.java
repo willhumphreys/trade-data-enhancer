@@ -151,23 +151,17 @@ public class Main {
         String hourlyDataFile = hourlyDataPath.getLocalPath().getFileName().toString();
         String dailyDataFile = dailyDataPath.getLocalPath().getFileName().toString();
 
-        // Instance of the trimmer
-        MinuteDataTrimmer trimmer = new MinuteDataTrimmer();
 
         // Output paths for intermediate processing
         var processedMinutePaths = new ProcessedPaths(minuteDataFile, outputDirectory);
         var processedHourlyPaths = new ProcessedPaths(hourlyDataFile, outputDirectory);
         var processedDailyPaths = new ProcessedPaths(dailyDataFile, outputDirectory);
 
-        // Trim the minute data
-        trimmer.trimMinuteData(minuteDataPath.getLocalPath(), hourlyDataPath.getLocalPath(), processedMinutePaths.trimmedMinuteOutput);
 
-        log.info("Minute data successfully trimmed and written to {}.", processedMinutePaths.trimmedMinuteOutput);
-
-        log.info("Starting data processing for Minute Data: {} and Hourly Data: {}", processedMinutePaths.trimmedMinuteOutput, hourlyDataFile);
+        log.info("Starting data processing for Minute Data: {} and Hourly Data: {}", minuteDataPath.getLocalPath(), hourlyDataPath.getLocalPath());
 
         // Process minute data (validation, decimal shift, and timestamp check)
-        processMinuteData(processedMinutePaths.trimmedMinuteOutput, processedMinutePaths);
+        processMinuteData(minuteDataPath.getLocalPath(), processedMinutePaths);
 
         // Process hourly data (validation, decimal shift, and timestamp check)
         processData(hourlyDataPath.getLocalPath(), processedHourlyPaths.validated, processedHourlyPaths.invalid, processedHourlyPaths.decimalShifted, processedHourlyPaths.sorted, processedHourlyPaths.deduplicated, processedHourlyPaths.timeFrameAtrOutput, HOURLY);
@@ -318,22 +312,22 @@ public class Main {
      *
      * @param minuteData
      * @param hourlyCheckedMinuteData
-     * @param timeFrameAtrOutput
+     * @param dailyDataWithHybridRatio
      * @param atrOutput
      * @throws IOException
      */
-    private static void performDataIntegrityCheck(Path minuteData, Path hourlyCheckedMinuteData, Path timeFrameAtrOutput, Path atrOutput) throws IOException {
+    private static void performDataIntegrityCheck(Path minuteData, Path hourlyCheckedMinuteData, Path dailyDataWithHybridRatio, Path atrOutput) throws IOException {
         log.info("Performing data integrity check...");
 
         var hourlyChecker = new HourlyDataChecker();
 
         // Step 1: Ensure hourly entries exist in minute data
-        int hourlyEntries = hourlyChecker.ensureHourlyEntries(minuteData, timeFrameAtrOutput, hourlyCheckedMinuteData);
+        int hourlyEntries = hourlyChecker.ensureHourlyEntries(minuteData, dailyDataWithHybridRatio, hourlyCheckedMinuteData);
         log.info("Inserted hours: {}", hourlyEntries);
 
         // Step 2: Validate data integrity
         var integrityChecker = new DataIntegrityChecker();
-        String integrityResult = integrityChecker.validateDataIntegrity(hourlyCheckedMinuteData, timeFrameAtrOutput);
+        String integrityResult = integrityChecker.validateDataIntegrity(hourlyCheckedMinuteData, dailyDataWithHybridRatio);
 
         if (!Objects.equals(integrityResult, "No issues found.")) {
             log.error("Data integrity check failed! {}", integrityResult);
@@ -342,8 +336,8 @@ public class Main {
         log.info("Data integrity check passed.");
 
         // Step 3: Copy ATR values from hourly data to minute data
-        //CopyHourlyATRToMinute.copyHourlyATRToMinute(hourlyCheckedMinuteData, timeFrameAtrOutput, atrOutput);
-        CopyDailyATRToMinute.copyDailyATRToMinute(hourlyCheckedMinuteData, timeFrameAtrOutput, atrOutput);
+        //CopyHourlyATRToMinute.copyHourlyATRToMinute(hourlyCheckedMinuteData, dailyDataWithHybridRatio, atrOutput);
+        CopyDailyATRToMinute.copyDailyATRToMinute(hourlyCheckedMinuteData, dailyDataWithHybridRatio, atrOutput);
         log.info("Successfully copied ATR values from hourly data to minute data.");
 
 
@@ -446,7 +440,7 @@ class ProcessedPaths {
     final Path timeFrameAtrOutput;
     final Path timeStampFormatted;
     final Path nameAppended;
-    final Path trimmedMinuteOutput;
+
 
     ProcessedPaths(String fileName2, Path outputDirectory) {
 
@@ -465,6 +459,5 @@ class ProcessedPaths {
         this.timeFrameAtrOutput = outputDirectory.resolve("5_hourly_atr_" + fileName);
         this.timeStampFormatted = outputDirectory.resolve("6_formatted_" + fileName);
         this.nameAppended = outputDirectory.resolve("7_with_name_" + fileName);
-        this.trimmedMinuteOutput = outputDirectory.resolve("1.1_trimmed_" + fileName);
     }
 }

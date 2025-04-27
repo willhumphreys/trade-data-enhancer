@@ -20,6 +20,7 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -47,6 +48,9 @@ public class HybridScalingAppender {
      */
     public Stream<ShiftedDataWithHybridScaling> appendScalingFactors(Stream<ShiftedData> data) {
         List<ShiftedData> dataList = data.collect(Collectors.toList());
+        if (dataList.isEmpty()) {
+            throw new IllegalStateException("data was empty");
+        }
         BigDecimal baselinePrice = calculateBaselinePrice(dataList);
         List<Bar> bars = convertToBars(dataList);
         BaseBarSeries barSeries = new BaseBarSeries("daily-data", bars);
@@ -54,18 +58,30 @@ public class HybridScalingAppender {
         ATRIndicator shortATRIndicator = new ATRIndicator(barSeries, shortATRPeriod);
         ATRIndicator longATRIndicator = new ATRIndicator(barSeries, longATRPeriod);
 
-        return dataList.stream().map(sd -> {
+        // Use IntStream to get index easily
+        return IntStream.range(0, dataList.size()).mapToObj(index -> {
+            ShiftedData sd = dataList.get(index);
             BigDecimal scalingFactor;
+
             if (timeFrame == TimeFrame.DAILY) {
-                int index = dataList.indexOf(sd);
                 BigDecimal price = BigDecimal.valueOf(sd.close());
+                // ta4j indicators handle initial unstable values
                 BigDecimal shortATR = BigDecimal.valueOf(shortATRIndicator.getValue(index).doubleValue());
                 BigDecimal longATR = BigDecimal.valueOf(longATRIndicator.getValue(index).doubleValue());
                 scalingFactor = calculateHybridScalingFactor(shortATR, longATR, price, baselinePrice);
-
-
             } else {
                 scalingFactor = BigDecimal.ONE;
+            }
+
+            // Log progress every 1000 records
+            // Check (index + 1) to log after processing the 1000th, 2000th, etc. record
+            if ((index + 1) % 1000 == 0) {
+                long epochSeconds = sd.timestamp();
+                Instant instant = Instant.ofEpochSecond(epochSeconds);
+                // Convert to ZonedDateTime using the system default timezone
+                ZonedDateTime zdt = ZonedDateTime.ofInstant(instant, ZoneId.systemDefault());
+                // ZonedDateTime.toString() produces ISO-8601 format
+                log.info("Processed record {} - Timestamp: {}", index + 1, zdt);
             }
 
             return new ShiftedDataWithHybridScaling(sd.timestamp(), sd.open(), sd.high(), sd.low(), sd.close(), sd.volume(), scalingFactor);
@@ -85,7 +101,7 @@ public class HybridScalingAppender {
         return dataList.stream().map(sd -> BigDecimal.valueOf(sd.close())).reduce(BigDecimal.ZERO, BigDecimal::add).divide(BigDecimal.valueOf(dataList.size()), SCALE, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal calculateHybridScalingFactor(BigDecimal shortATR, BigDecimal longATR, BigDecimal price, BigDecimal baselinePrice) {
+    public BigDecimal calculateHybridScalingFactor(BigDecimal shortATR, BigDecimal longATR, BigDecimal price, BigDecimal baselinePrice) {
         if (shortATR.compareTo(BigDecimal.ZERO) <= 0 || longATR.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
