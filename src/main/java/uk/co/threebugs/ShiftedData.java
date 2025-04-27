@@ -7,5 +7,5 @@ import lombok.Builder;
  * and stored as `long` for precision and consistency.
  */
 @Builder
-public record ShiftedMinuteData(long timestamp, long open, long high, long low, long close, double volume) {
+public record ShiftedData(long timestamp, long open, long high, long low, long close, double volume) {
 }

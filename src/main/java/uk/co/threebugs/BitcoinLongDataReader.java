@@ -18,7 +18,7 @@ public class BitcoinLongDataReader {
      * @throws IOException              If the file cannot be read.
      * @throws IllegalArgumentException If there are issues parsing lines.
      */
-    public Stream<ShiftedMinuteData> readFile(Path filePath) throws IOException {
+    public Stream<ShiftedData> readFile(Path filePath) throws IOException {
         return new BufferedReader(new FileReader(filePath.toFile()))
                 .lines()
                 .skip(1) // Skip the header
@@ -35,7 +35,7 @@ public class BitcoinLongDataReader {
                         var close = Long.parseLong(parts[4]);
                         var volume = Double.parseDouble(parts[5]);
 
-                        return ShiftedMinuteData.builder()
+                        return ShiftedData.builder()
                                 .timestamp(timestamp)
                                 .open(open)
                                 .high(high)

@@ -12,6 +12,9 @@ import java.nio.file.Paths;
 import java.util.Map;
 import java.util.Objects;
 
+import static uk.co.threebugs.TimeFrame.DAILY;
+import static uk.co.threebugs.TimeFrame.HOURLY;
+
 @Slf4j
 public class Main {
 
@@ -84,13 +87,13 @@ public class Main {
 
         // Continue with your application logic
         // This is where you'd call the data processing methods
-        executeDataProcessing(ticker, provider, s3KeyMin, s3KeyHour, s3KeyDay, atrWindow, inputBucketName, outputBucketName);
+        executeDataProcessing(ticker, provider, s3KeyMin, s3KeyHour, s3KeyDay, inputBucketName, outputBucketName);
     }
 
     /**
      * Execute the core data processing logic
      */
-    private static void executeDataProcessing(String ticker, String provider, String s3KeyMin, String s3KeyHour, String s3KeyDay, int atrWindow, String inputBucketName, String outputBucketName) throws IOException {
+    private static void executeDataProcessing(String ticker, String provider, String s3KeyMin, String s3KeyHour, String s3KeyDay, String inputBucketName, String outputBucketName) throws IOException {
 
         // Initialize S3 client
         S3Client s3Client = S3Client.builder().region(Region.EU_CENTRAL_1) // Adjust region as needed
@@ -167,10 +170,10 @@ public class Main {
         processMinuteData(processedMinutePaths.trimmedMinuteOutput, processedMinutePaths);
 
         // Process hourly data (validation, decimal shift, and timestamp check)
-        processData(hourlyDataPath.getLocalPath(), atrWindow, processedHourlyPaths.validated, processedHourlyPaths.invalid, processedHourlyPaths.decimalShifted, processedHourlyPaths.sorted, processedHourlyPaths.deduplicated, processedHourlyPaths.timeFrameAtrOutput, "Hourly");
+        processData(hourlyDataPath.getLocalPath(), processedHourlyPaths.validated, processedHourlyPaths.invalid, processedHourlyPaths.decimalShifted, processedHourlyPaths.sorted, processedHourlyPaths.deduplicated, processedHourlyPaths.timeFrameAtrOutput, HOURLY);
 
         // Process daily data
-        processData(dailyDataPath.getLocalPath(), 14, processedDailyPaths.validated, processedDailyPaths.invalid, processedDailyPaths.decimalShifted, processedDailyPaths.sorted, processedDailyPaths.deduplicated, processedDailyPaths.timeFrameAtrOutput, "Daily");
+        processData(dailyDataPath.getLocalPath(), processedDailyPaths.validated, processedDailyPaths.invalid, processedDailyPaths.decimalShifted, processedDailyPaths.sorted, processedDailyPaths.deduplicated, processedDailyPaths.timeFrameAtrOutput, DAILY);
 
         // Combine hourly and minute data for integrity check
         performDataIntegrityCheck(processedMinutePaths.decimalShifted, processedMinutePaths.hourlyChecked, processedDailyPaths.timeFrameAtrOutput, processedMinutePaths.atrOutput);
@@ -225,7 +228,7 @@ public class Main {
     }
 
 
-    private static void processData(Path hourlyDataPath, int atrWindow, Path validated, Path invalidPath, Path decimalShifted, Path sorted, Path deduplicated, Path hourlyAtrOutput, String timeFrame) throws IOException {
+    private static void processData(Path dataPath, Path validated, Path invalidPath, Path decimalShifted, Path sorted, Path deduplicated, Path hourlyAtrOutput, TimeFrame timeFrame) throws IOException {
         log.info("Processing " + timeFrame + " data...");
 
         var validator = new DataValidator();
@@ -235,7 +238,7 @@ public class Main {
         var timestampOrderChecker = new TimestampOrderChecker();
 
         // Step 1: Validate hourly data
-        validator.validateDataFile(hourlyDataPath, validated, invalidPath);
+        validator.validateDataFile(dataPath, validated, invalidPath);
         log.info(timeFrame + " data validated.");
 
         // Step 2: Decimal shift
@@ -261,12 +264,12 @@ public class Main {
         log.info(timeFrame + " timestamps verified to be correct.");
 
         // Step 6: Append ATR values
-        log.info("Appending ATR values to hourly data...");
-        var atrAppender = new ATRAppender();
+        log.info("Appending ATR values to {} data...", timeFrame);
+        var atrAppender = new HybridScalingAppender(21, 120, 0.5, timeFrame);
         var longReader = new BitcoinLongDataReader();
 
         var hourlyDataLong = longReader.readFile(deduplicated); // Read from deduplicated file
-        atrAppender.writeStreamToFile(atrAppender.appendATR(hourlyDataLong, atrWindow), hourlyAtrOutput);
+        atrAppender.writeStreamToFile(atrAppender.appendScalingFactors(hourlyDataLong), hourlyAtrOutput);
         log.info("ATR values successfully added to " + timeFrame + " data.");
     }
 

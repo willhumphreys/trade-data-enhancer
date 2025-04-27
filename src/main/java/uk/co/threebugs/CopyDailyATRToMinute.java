@@ -3,6 +3,7 @@ package uk.co.threebugs;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -28,16 +29,16 @@ public class CopyDailyATRToMinute {
 
         // Build a map of daily ATR values
         // Assumes the daily file has the format: Timestamp,Open,High,Low,Close,Volume,ATR
-        Map<Long, Long> dailyATRMap = dataLines.stream()
+        Map<Long, BigDecimal> dailyATRMap = dataLines.stream()
                 .map(line -> line.split(","))
                 .collect(Collectors.toMap(
                         parts -> (long) Double.parseDouble(parts[0]),   // Daily Timestamp
-                        parts -> Long.parseLong(parts[6])                 // ATR value from daily data
+                        parts -> new BigDecimal(parts[6])                 // ATR value from daily data
                 ));
 
         // Read minute data using BitcoinLongDataReader
         BitcoinLongDataReader reader = new BitcoinLongDataReader();
-        Stream<ShiftedMinuteData> minuteDataStream = reader.readFile(minuteData);
+        Stream<ShiftedData> minuteDataStream = reader.readFile(minuteData);
 
         // Create a new list to store updated minute data, including a CSV header
         List<String> updatedMinuteData = new ArrayList<>();
@@ -47,12 +48,12 @@ public class CopyDailyATRToMinute {
             long minuteTimestamp = minute.timestamp();
             // Align to daily start (each day is 86400 seconds)
             long associatedDayTimestamp = (minuteTimestamp / 86400L) * 86400L;
-            long atrValue = dailyATRMap.getOrDefault(associatedDayTimestamp, -1L); // Default to -1 if not found
+            BigDecimal atrValue = dailyATRMap.getOrDefault(associatedDayTimestamp, BigDecimal.valueOf(-1L)); // Default to -1 if not found
 
             updatedMinuteData.add(
-                    String.format("%d,%d,%d,%d,%d,%s,%d",
+                    String.format("%d,%d,%d,%d,%d,%s,%s",
                             minuteTimestamp, minute.open(), minute.high(),
-                            minute.low(), minute.close(), minute.volume(), atrValue)
+                            minute.low(), minute.close(), minute.volume(), atrValue.toPlainString())
             );
         });
 

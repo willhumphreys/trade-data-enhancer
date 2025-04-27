@@ -1,4 +1,4 @@
 package uk.co.threebugs;
 
-public record ShiftedMinuteDataWithATR(ShiftedMinuteData minuteData, Long atr) {
+public record ShiftedMinuteDataWithATR(ShiftedData minuteData, Long atr) {
 }

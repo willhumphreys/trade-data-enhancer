@@ -37,7 +37,7 @@ public class CopyHourlyATRToMinute {
 
         // Read minute data using BitcoinLongDataReader
         BitcoinLongDataReader reader = new BitcoinLongDataReader();
-        Stream<ShiftedMinuteData> minuteDataStream = reader.readFile(minuteData);
+        Stream<ShiftedData> minuteDataStream = reader.readFile(minuteData);
 
         // Map ATR values to the corresponding minute data
         List<String> updatedMinuteData = new ArrayList<>();

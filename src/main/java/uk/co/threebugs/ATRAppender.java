@@ -17,7 +17,6 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -33,13 +32,13 @@ public class ATRAppender {
      * @param atrWindow Number of periods to use in ATR calculation.
      * @return A stream of ShiftedMinuteDataWithATR containing the ATR values.
      */
-    public Stream<ShiftedMinuteDataWithATR> appendATR(Stream<ShiftedMinuteData> data, int atrWindow) {
+    public Stream<ShiftedMinuteDataWithATR> appendATR(Stream<ShiftedData> data, int atrWindow) {
         // Collect all minute data into a list for conversion and for computing ATR values.
-        List<ShiftedMinuteData> minuteDataList = data.collect(Collectors.toList());
+        List<ShiftedData> dailyData = data.toList();
 
         // Convert the list of minute data into a list of TA4J Bars.
-        List<Bar> bars = new ArrayList<>(minuteDataList.size());
-        for (ShiftedMinuteData sd : minuteDataList) {
+        List<Bar> bars = new ArrayList<>(dailyData.size());
+        for (ShiftedData sd : dailyData) {
             // Convert the timestamp (assumed seconds) to ZonedDateTime.
             ZonedDateTime endTime = ZonedDateTime.ofInstant(Instant.ofEpochSecond(sd.timestamp()), ZoneId.systemDefault());
             // Convert ShiftedMinuteData to a TA4J bar. Duration here is set to 1 minute.
@@ -64,9 +63,9 @@ public class ATRAppender {
         // Map each minute data entry with its corresponding ATR value.
         // It is assumed that ShiftedMinuteDataWithATR is a record with the following structure:
         //   record ShiftedMinuteDataWithATR(long timestamp, long open, long high, long low, long close, double volume, double atr)
-        List<ShiftedMinuteDataWithATR> dataWithATR = new ArrayList<>(minuteDataList.size());
-        for (int i = 0; i < minuteDataList.size(); i++) {
-            ShiftedMinuteData sd = minuteDataList.get(i);
+        List<ShiftedMinuteDataWithATR> dataWithATR = new ArrayList<>(dailyData.size());
+        for (int i = 0; i < dailyData.size(); i++) {
+            ShiftedData sd = dailyData.get(i);
             long atrValue = atrIndicator.getValue(i).longValue();
 
             dataWithATR.add(new ShiftedMinuteDataWithATR(sd, atrValue));
