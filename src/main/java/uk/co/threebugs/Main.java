@@ -55,6 +55,9 @@ public class Main {
         String s3KeyMin = validateRequiredOption(cmd, "s3_key_min", "S3 key for minute data");
         String s3KeyHour = validateRequiredOption(cmd, "s3_key_hour", "S3 key for hourly data");
         String s3KeyDay = validateRequiredOption(cmd, "s3_key_day", "S3 key for daily data");
+        int shortAtrPeriod = Integer.parseInt(validateRequiredOption(cmd, "short_atr_period", "short ATR period"));
+        int longAtrPeriod = Integer.parseInt(validateRequiredOption(cmd, "long_atr_period", "long ATR period"));
+        double alpha = Double.parseDouble(validateRequiredOption(cmd, "alpha", "alpha value"));
 
 
         // Extract optional options
@@ -83,17 +86,19 @@ public class Main {
         log.info("  ATR Window: {}", atrWindow);
         log.info("  Input Bucket: {}", inputBucketName);
         log.info("  Output Bucket: {}", outputBucketName);
-
+        log.info("  Short ATR Period: {}", shortAtrPeriod);
+        log.info("  Long ATR Period: {}", longAtrPeriod);
+        log.info("  Alpha: {}", alpha);
 
         // Continue with your application logic
         // This is where you'd call the data processing methods
-        executeDataProcessing(ticker, provider, s3KeyMin, s3KeyHour, s3KeyDay, inputBucketName, outputBucketName);
+        executeDataProcessing(ticker, provider, s3KeyMin, s3KeyHour, s3KeyDay, inputBucketName, outputBucketName, shortAtrPeriod, longAtrPeriod, alpha);
     }
 
     /**
      * Execute the core data processing logic
      */
-    private static void executeDataProcessing(String ticker, String provider, String s3KeyMin, String s3KeyHour, String s3KeyDay, String inputBucketName, String outputBucketName) throws IOException {
+    private static void executeDataProcessing(String ticker, String provider, String s3KeyMin, String s3KeyHour, String s3KeyDay, String inputBucketName, String outputBucketName, int shortATRPeriod, int longATRPeriod, double alpha) throws IOException {
 
         // Initialize S3 client
         S3Client s3Client = S3Client.builder().region(Region.EU_CENTRAL_1) // Adjust region as needed
@@ -164,10 +169,10 @@ public class Main {
         processMinuteData(minuteDataPath.getLocalPath(), processedMinutePaths);
 
         // Process hourly data (validation, decimal shift, and timestamp check)
-        processData(hourlyDataPath.getLocalPath(), processedHourlyPaths.validated, processedHourlyPaths.invalid, processedHourlyPaths.decimalShifted, processedHourlyPaths.sorted, processedHourlyPaths.deduplicated, processedHourlyPaths.timeFrameAtrOutput, HOURLY);
+        processData(hourlyDataPath.getLocalPath(), processedHourlyPaths.validated, processedHourlyPaths.invalid, processedHourlyPaths.decimalShifted, processedHourlyPaths.sorted, processedHourlyPaths.deduplicated, processedHourlyPaths.timeFrameAtrOutput, HOURLY, shortATRPeriod, longATRPeriod, alpha);
 
         // Process daily data
-        processData(dailyDataPath.getLocalPath(), processedDailyPaths.validated, processedDailyPaths.invalid, processedDailyPaths.decimalShifted, processedDailyPaths.sorted, processedDailyPaths.deduplicated, processedDailyPaths.timeFrameAtrOutput, DAILY);
+        processData(dailyDataPath.getLocalPath(), processedDailyPaths.validated, processedDailyPaths.invalid, processedDailyPaths.decimalShifted, processedDailyPaths.sorted, processedDailyPaths.deduplicated, processedDailyPaths.timeFrameAtrOutput, DAILY, shortATRPeriod, longATRPeriod, alpha);
 
         // Combine hourly and minute data for integrity check
         performDataIntegrityCheck(processedMinutePaths.decimalShifted, processedMinutePaths.hourlyChecked, processedDailyPaths.timeFrameAtrOutput, processedMinutePaths.atrOutput);
@@ -218,11 +223,18 @@ public class Main {
 
         options.addOption(Option.builder("f").longOpt("file").hasArg().desc("Input file name (optional)").required(false).build());
 
+        options.addOption(Option.builder().longOpt("short_atr_period").hasArg().desc("Short ATR period").required(true).build());
+
+        options.addOption(Option.builder().longOpt("long_atr_period").hasArg().desc("Long ATR period").required(true).build());
+
+        options.addOption(Option.builder().longOpt("alpha").hasArg().desc("Alpha value").required(true).build());
+
         return options;
     }
 
 
-    private static void processData(Path dataPath, Path validated, Path invalidPath, Path decimalShifted, Path sorted, Path deduplicated, Path hourlyAtrOutput, TimeFrame timeFrame) throws IOException {
+    private static void processData(Path dataPath, Path validated, Path invalidPath, Path decimalShifted, Path sorted, Path deduplicated, Path hourlyAtrOutput, TimeFrame timeFrame,
+                                    int shortATRPeriod, int longATRPeriod, double alpha) throws IOException {
         log.info("Processing " + timeFrame + " data...");
 
         var validator = new DataValidator();
@@ -259,7 +271,7 @@ public class Main {
 
         // Step 6: Append ATR values
         log.info("Appending ATR values to {} data...", timeFrame);
-        var atrAppender = new HybridScalingAppender(21, 120, 0.5, timeFrame);
+        var atrAppender = new HybridScalingAppender(shortATRPeriod, longATRPeriod, alpha, timeFrame);
         var longReader = new BitcoinLongDataReader();
 
         var hourlyDataLong = longReader.readFile(deduplicated); // Read from deduplicated file
