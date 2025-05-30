@@ -62,6 +62,11 @@ public class Main {
 
         // Extract optional options
         int atrWindow = Integer.parseInt(cmd.getOptionValue("w", "14")); // Default to 14 if not provided
+        String backTestId = cmd.getOptionValue("back_test_id");
+
+        if (backTestId != null) {
+            log.info("Back Test ID: {}", backTestId);
+        }
 
         // Read environment variables for bucket names
         String inputBucketName = System.getenv("INPUT_BUCKET_NAME");
@@ -228,6 +233,8 @@ public class Main {
         options.addOption(Option.builder().longOpt("long_atr_period").hasArg().desc("Long ATR period").required(true).build());
 
         options.addOption(Option.builder().longOpt("alpha").hasArg().desc("Alpha value").required(true).build());
+
+        options.addOption(Option.builder().longOpt("back_test_id").hasArg().desc("Back test ID").required(false).build());
 
         return options;
     }
