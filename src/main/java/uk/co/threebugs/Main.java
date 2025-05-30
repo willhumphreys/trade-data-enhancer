@@ -5,6 +5,8 @@ import org.apache.commons.cli.*;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -71,6 +73,7 @@ public class Main {
         // Read environment variables for bucket names
         String inputBucketName = System.getenv("INPUT_BUCKET_NAME");
         String outputBucketName = System.getenv("OUTPUT_BUCKET_NAME");
+        String mochiProdBacktestParamsBucket = System.getenv("MOCHI_PROD_BACKTEST_PARAMS");
 
         // Check if environment variables are available
         if (inputBucketName == null || inputBucketName.isEmpty()) {
@@ -97,13 +100,16 @@ public class Main {
 
         // Continue with your application logic
         // This is where you'd call the data processing methods
-        executeDataProcessing(ticker, provider, s3KeyMin, s3KeyHour, s3KeyDay, inputBucketName, outputBucketName, shortAtrPeriod, longAtrPeriod, alpha);
+        executeDataProcessing(ticker, provider, s3KeyMin, s3KeyHour, s3KeyDay, inputBucketName, outputBucketName, shortAtrPeriod, longAtrPeriod, alpha, backTestId, mochiProdBacktestParamsBucket);
     }
 
     /**
      * Execute the core data processing logic
      */
-    private static void executeDataProcessing(String ticker, String provider, String s3KeyMin, String s3KeyHour, String s3KeyDay, String inputBucketName, String outputBucketName, int shortATRPeriod, int longATRPeriod, double alpha) throws IOException {
+    private static void executeDataProcessing(String ticker, String provider, String s3KeyMin, String s3KeyHour, String s3KeyDay,
+                                              String inputBucketName, String outputBucketName, int shortATRPeriod, int longATRPeriod,
+                                              double alpha, String backTestId, String mochiProdBacktestParamsBucket) throws IOException {
+
 
         // Initialize S3 client
         S3Client s3Client = S3Client.builder().region(Region.EU_CENTRAL_1) // Adjust region as needed
@@ -184,6 +190,14 @@ public class Main {
 
         // Additional processing for ATR and formatting
         Path inputPath = performAdditionalProcessing(processedMinutePaths);
+
+        // Load minute data and print header and last row
+        String weightingAtr = printMinuteDataHeaderAndLastRow(inputPath);
+
+        // Update JSON file in S3 with weightingAtr value if backTestId is provided
+        if (backTestId != null && !backTestId.isEmpty() && mochiProdBacktestParamsBucket != null && !mochiProdBacktestParamsBucket.isEmpty()) {
+            updateJsonWithWeightingAtr(s3Client, backTestId, mochiProdBacktestParamsBucket, weightingAtr);
+        }
 
         String s3Key = new DataUploader(s3Client).uploadMinuteData(inputPath, outputBucketName, minuteDataPath.getS3Path());
 
@@ -440,6 +454,157 @@ public class Main {
         long addedMissingHours = missingHourAdder.addMissingHours(inputPath, outputPath);// Execute the missing row addition
 
         log.info("Added holiday hours {}", addedMissingHours);
+    }
+
+    /**
+     * Loads minute data from the specified file and prints the header and last row.
+     */
+    /**
+     * Updates a JSON file in S3 with the weightingAtr value.
+     *
+     * @param s3Client     The S3 client to use for S3 operations
+     * @param backTestId   The back test ID to use as the key for the JSON file
+     * @param bucketName   The name of the S3 bucket where the JSON file is stored
+     * @param weightingAtr The weightingAtr value to add to the JSON file
+     * @throws IOException If there are errors during file operations
+     */
+    private static void updateJsonWithWeightingAtr(S3Client s3Client, String backTestId, String bucketName, String weightingAtr) throws IOException {
+        if (weightingAtr == null) {
+            log.warn("weightingAtr value is null. Skipping JSON update.");
+            return;
+        }
+
+        log.info("Updating JSON file in S3 with weightingAtr value: {}", weightingAtr);
+
+        // Create the S3 key for the JSON file
+        String jsonKey = backTestId + ".json";
+        log.info("JSON file key: {}", jsonKey);
+
+        // Create a temporary directory for downloading and uploading the JSON file
+        Path tempDir = Files.createTempDirectory("json_update");
+        Path jsonFilePath = tempDir.resolve("params.json");
+
+        try {
+            // Download the JSON file from S3
+            log.info("Downloading JSON file from S3: s3://{}/{}", bucketName, jsonKey);
+            software.amazon.awssdk.services.s3.model.GetObjectRequest getObjectRequest =
+                    software.amazon.awssdk.services.s3.model.GetObjectRequest.builder()
+                            .bucket(bucketName)
+                            .key(jsonKey)
+                            .build();
+
+            s3Client.getObject(getObjectRequest, software.amazon.awssdk.core.sync.ResponseTransformer.toFile(jsonFilePath.toFile()));
+
+            // Read the JSON file
+            String jsonContent = Files.readString(jsonFilePath);
+            log.info("Original JSON content: {}", jsonContent);
+
+            // Update the JSON content with the weightingAtr value
+            String updatedJsonContent;
+            if (jsonContent.trim().endsWith("}")) {
+                // Add the weightingAtr field before the closing brace
+                updatedJsonContent = jsonContent.substring(0, jsonContent.lastIndexOf("}")).trim();
+                if (updatedJsonContent.endsWith(",")) {
+                    updatedJsonContent += " \"weightingAtr\": " + weightingAtr + " }";
+                } else {
+                    updatedJsonContent += ", \"weightingAtr\": " + weightingAtr + " }";
+                }
+            } else {
+                log.error("Invalid JSON format. Unable to update JSON file.");
+                return;
+            }
+
+            log.info("Updated JSON content: {}", updatedJsonContent);
+
+            // Write the updated JSON content to the file
+            Files.writeString(jsonFilePath, updatedJsonContent);
+
+            // Upload the updated JSON file to S3
+            log.info("Uploading updated JSON file to S3: s3://{}/{}", bucketName, jsonKey);
+            software.amazon.awssdk.services.s3.model.PutObjectRequest putObjectRequest =
+                    software.amazon.awssdk.services.s3.model.PutObjectRequest.builder()
+                            .bucket(bucketName)
+                            .key(jsonKey)
+                            .build();
+
+            s3Client.putObject(putObjectRequest, software.amazon.awssdk.core.sync.RequestBody.fromFile(jsonFilePath));
+
+            log.info("Successfully updated JSON file in S3 with weightingAtr value: {}", weightingAtr);
+        } catch (Exception e) {
+            log.error("Error updating JSON file in S3: {}", e.getMessage(), e);
+            throw new IOException("Error updating JSON file in S3", e);
+        } finally {
+            // Clean up temporary files
+            Files.deleteIfExists(jsonFilePath);
+            Files.deleteIfExists(tempDir);
+        }
+    }
+
+    /**
+     * Loads minute data from the specified file and prints the header and last row.
+     *
+     * @param filePath Path to the minute data file
+     * @return The weightingAtr value from the last row
+     * @throws IOException If there are errors during file reading
+     */
+    private static String printMinuteDataHeaderAndLastRow(Path filePath) throws IOException {
+        log.info("Loading minute data to print header and last row...");
+
+        String header = null;
+        String lastLine = null;
+        String weightingAtr = null;
+
+        // Read the file line by line to get both header and last line
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath.toFile()))) {
+            String line;
+            header = reader.readLine(); // First line is the header
+
+            // Continue reading until the end to get the last line
+            while ((line = reader.readLine()) != null) {
+                lastLine = line;
+            }
+        }
+
+        // Print header for reference
+        log.info("Minute data header: {}", header);
+
+        if (lastLine != null) {
+            // Print last row for reference
+            log.info("Minute data last row: {}", lastLine);
+
+            // Format and print aligned header and values
+            String[] headerFields = header.split(",");
+            String[] valueFields = lastLine.split(",");
+
+            StringBuilder alignedOutput = new StringBuilder("Aligned minute data (header=value):\n");
+
+            // Determine the maximum length of header fields for alignment
+            int maxHeaderLength = 0;
+            for (String field : headerFields) {
+                maxHeaderLength = Math.max(maxHeaderLength, field.length());
+            }
+
+            // Format string with padding based on the maximum header length
+            String formatString = "  %-" + (maxHeaderLength + 2) + "s %s\n";
+
+            // Build the aligned output and extract weightingAtr value
+            int minLength = Math.min(headerFields.length, valueFields.length);
+            for (int i = 0; i < minLength; i++) {
+                alignedOutput.append(String.format(formatString, headerFields[i] + ":", valueFields[i]));
+
+                // Extract weightingAtr value
+                if (headerFields[i].equals("weightingAtr")) {
+                    weightingAtr = valueFields[i];
+                    log.info("Extracted weightingAtr value: {}", weightingAtr);
+                }
+            }
+
+            log.info(alignedOutput.toString());
+        } else {
+            log.warn("No data found in the minute data file.");
+        }
+
+        return weightingAtr;
     }
 
 }
