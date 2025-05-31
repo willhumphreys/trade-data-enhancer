@@ -21,7 +21,7 @@ import static uk.co.threebugs.TimeFrame.HOURLY;
 public class Main {
 
     public static void main(String[] args) throws Exception {
-            processCommandLine(args);
+        processCommandLine(args);
     }
 
     /**
@@ -60,15 +60,9 @@ public class Main {
         int shortAtrPeriod = Integer.parseInt(validateRequiredOption(cmd, "short_atr_period", "short ATR period"));
         int longAtrPeriod = Integer.parseInt(validateRequiredOption(cmd, "long_atr_period", "long ATR period"));
         double alpha = Double.parseDouble(validateRequiredOption(cmd, "alpha", "alpha value"));
+        int atrWindow = Integer.parseInt(validateRequiredOption(cmd, "w", "ATR window size"));
+        String backTestId = validateRequiredOption(cmd, "back_test_id", "Back test ID");
 
-
-        // Extract optional options
-        int atrWindow = Integer.parseInt(cmd.getOptionValue("w", "14")); // Default to 14 if not provided
-        String backTestId = cmd.getOptionValue("back_test_id");
-
-        if (backTestId != null) {
-            log.info("Back Test ID: {}", backTestId);
-        }
 
         // Read environment variables for bucket names
         String inputBucketName = System.getenv("INPUT_BUCKET_NAME");
@@ -97,6 +91,7 @@ public class Main {
         log.info("  Short ATR Period: {}", shortAtrPeriod);
         log.info("  Long ATR Period: {}", longAtrPeriod);
         log.info("  Alpha: {}", alpha);
+        log.info(" BackTestId: {}", backTestId);
 
         // Continue with your application logic
         // This is where you'd call the data processing methods
@@ -106,9 +101,7 @@ public class Main {
     /**
      * Execute the core data processing logic
      */
-    private static void executeDataProcessing(String ticker, String provider, String s3KeyMin, String s3KeyHour, String s3KeyDay,
-                                              String inputBucketName, String outputBucketName, int shortATRPeriod, int longATRPeriod,
-                                              double alpha, String backTestId, String mochiProdBacktestParamsBucket) throws IOException {
+    private static void executeDataProcessing(String ticker, String provider, String s3KeyMin, String s3KeyHour, String s3KeyDay, String inputBucketName, String outputBucketName, int shortATRPeriod, int longATRPeriod, double alpha, String backTestId, String mochiProdBacktestParamsBucket) throws IOException {
 
 
         // Initialize S3 client
@@ -194,8 +187,8 @@ public class Main {
         // Load minute data and print header and last row
         String weightingAtr = printMinuteDataHeaderAndLastRow(inputPath);
 
-        // Update JSON file in S3 with weightingAtr value if backTestId is provided
-        if (backTestId != null && !backTestId.isEmpty() && mochiProdBacktestParamsBucket != null && !mochiProdBacktestParamsBucket.isEmpty()) {
+        // Update JSON file in S3 with weightingAtr value
+        if (!backTestId.isEmpty() && mochiProdBacktestParamsBucket != null && !mochiProdBacktestParamsBucket.isEmpty()) {
             updateJsonWithWeightingAtr(s3Client, backTestId, mochiProdBacktestParamsBucket, weightingAtr);
         }
 
@@ -238,9 +231,9 @@ public class Main {
 
         options.addOption(Option.builder("d").longOpt("s3_key_day").hasArg().desc("S3 key for daily data").required(true).build());
 
-        options.addOption(Option.builder("w").longOpt("window").hasArg().desc("ATR window size (default: 14)").required(false).build());
+        options.addOption(Option.builder("w").longOpt("window").hasArg().desc("ATR window size").required(true).build());
 
-        options.addOption(Option.builder("f").longOpt("file").hasArg().desc("Input file name (optional)").required(false).build());
+        options.addOption(Option.builder("f").longOpt("file").hasArg().desc("Input file name").required(true).build());
 
         options.addOption(Option.builder().longOpt("short_atr_period").hasArg().desc("Short ATR period").required(true).build());
 
@@ -248,14 +241,13 @@ public class Main {
 
         options.addOption(Option.builder().longOpt("alpha").hasArg().desc("Alpha value").required(true).build());
 
-        options.addOption(Option.builder().longOpt("back_test_id").hasArg().desc("Back test ID").required(false).build());
+        options.addOption(Option.builder().longOpt("back_test_id").hasArg().desc("Back test ID").required(true).build());
 
         return options;
     }
 
 
-    private static void processData(Path dataPath, Path validated, Path invalidPath, Path decimalShifted, Path sorted, Path deduplicated, Path hourlyAtrOutput, TimeFrame timeFrame,
-                                    int shortATRPeriod, int longATRPeriod, double alpha) throws IOException {
+    private static void processData(Path dataPath, Path validated, Path invalidPath, Path decimalShifted, Path sorted, Path deduplicated, Path hourlyAtrOutput, TimeFrame timeFrame, int shortATRPeriod, int longATRPeriod, double alpha) throws IOException {
         log.info("Processing " + timeFrame + " data...");
 
         var validator = new DataValidator();
@@ -487,11 +479,7 @@ public class Main {
         try {
             // Download the JSON file from S3
             log.info("Downloading JSON file from S3: s3://{}/{}", bucketName, jsonKey);
-            software.amazon.awssdk.services.s3.model.GetObjectRequest getObjectRequest =
-                    software.amazon.awssdk.services.s3.model.GetObjectRequest.builder()
-                            .bucket(bucketName)
-                            .key(jsonKey)
-                            .build();
+            software.amazon.awssdk.services.s3.model.GetObjectRequest getObjectRequest = software.amazon.awssdk.services.s3.model.GetObjectRequest.builder().bucket(bucketName).key(jsonKey).build();
 
             s3Client.getObject(getObjectRequest, software.amazon.awssdk.core.sync.ResponseTransformer.toFile(jsonFilePath.toFile()));
 
@@ -521,11 +509,7 @@ public class Main {
 
             // Upload the updated JSON file to S3
             log.info("Uploading updated JSON file to S3: s3://{}/{}", bucketName, jsonKey);
-            software.amazon.awssdk.services.s3.model.PutObjectRequest putObjectRequest =
-                    software.amazon.awssdk.services.s3.model.PutObjectRequest.builder()
-                            .bucket(bucketName)
-                            .key(jsonKey)
-                            .build();
+            software.amazon.awssdk.services.s3.model.PutObjectRequest putObjectRequest = software.amazon.awssdk.services.s3.model.PutObjectRequest.builder().bucket(bucketName).key(jsonKey).build();
 
             s3Client.putObject(putObjectRequest, software.amazon.awssdk.core.sync.RequestBody.fromFile(jsonFilePath));
 
