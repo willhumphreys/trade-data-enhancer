@@ -231,9 +231,9 @@ public class Main {
 
         options.addOption(Option.builder("d").longOpt("s3_key_day").hasArg().desc("S3 key for daily data").required(true).build());
 
-        options.addOption(Option.builder("w").longOpt("window").hasArg().desc("ATR window size").required(true).build());
+        options.addOption(Option.builder("w").longOpt("window").hasArg().desc("ATR window size").required(false).build());
 
-        options.addOption(Option.builder("f").longOpt("file").hasArg().desc("Input file name").required(true).build());
+        options.addOption(Option.builder("f").longOpt("file").hasArg().desc("Input file name").required(false).build());
 
         options.addOption(Option.builder().longOpt("short_atr_period").hasArg().desc("Short ATR period").required(true).build());
 
