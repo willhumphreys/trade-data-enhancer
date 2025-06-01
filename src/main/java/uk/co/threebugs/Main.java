@@ -186,10 +186,8 @@ public class Main {
         // Load minute data and print header and last row
         String weightingAtr = printMinuteDataHeaderAndLastRow(inputPath);
 
-        // Update JSON file in S3 with weightingAtr value
-        if (!backTestId.isEmpty() && mochiProdBacktestParamsBucket != null && !mochiProdBacktestParamsBucket.isEmpty()) {
-            updateJsonWithWeightingAtr(s3Client, backTestId, mochiProdBacktestParamsBucket, weightingAtr);
-        }
+        updateJsonWithWeightingAtr(s3Client, backTestId, mochiProdBacktestParamsBucket, weightingAtr);
+
 
         String s3Key = new DataUploader(s3Client).uploadMinuteData(inputPath, outputBucketName, minuteDataPath.getS3Path());
 
@@ -462,7 +460,7 @@ public class Main {
     private static void updateJsonWithWeightingAtr(S3Client s3Client, String backTestId, String bucketName, String weightingAtr) throws IOException {
         if (weightingAtr == null) {
             log.warn("weightingAtr value is null. Skipping JSON update.");
-            return;
+            throw new IllegalArgumentException("weightingAtr value is null. Skipping JSON update.");
         }
 
         log.info("Updating JSON file in S3 with weightingAtr value: {}", weightingAtr);
@@ -498,7 +496,7 @@ public class Main {
                 }
             } else {
                 log.error("Invalid JSON format. Unable to update JSON file.");
-                return;
+                throw new IOException("Invalid JSON format. Unable to update JSON file.");
             }
 
             log.info("Updated JSON content: {}", updatedJsonContent);
