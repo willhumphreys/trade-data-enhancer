@@ -60,9 +60,8 @@ public class Main {
         int shortAtrPeriod = Integer.parseInt(validateRequiredOption(cmd, "short_atr_period", "short ATR period"));
         int longAtrPeriod = Integer.parseInt(validateRequiredOption(cmd, "long_atr_period", "long ATR period"));
         double alpha = Double.parseDouble(validateRequiredOption(cmd, "alpha", "alpha value"));
-        int atrWindow = Integer.parseInt(validateRequiredOption(cmd, "w", "ATR window size"));
+        int atrWindow = Integer.parseInt(cmd.getOptionValue("w", "14")); // Default to 14 if not provided
         String backTestId = validateRequiredOption(cmd, "back_test_id", "Back test ID");
-
 
         // Read environment variables for bucket names
         String inputBucketName = System.getenv("INPUT_BUCKET_NAME");
