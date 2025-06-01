@@ -2,8 +2,11 @@ package uk.co.threebugs;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.cli.*;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -476,7 +479,7 @@ public class Main {
         try {
             // Download the JSON file from S3
             log.info("Downloading JSON file from S3: s3://{}/{}", bucketName, jsonKey);
-            software.amazon.awssdk.services.s3.model.GetObjectRequest getObjectRequest = software.amazon.awssdk.services.s3.model.GetObjectRequest.builder().bucket(bucketName).key(jsonKey).build();
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder().bucket(bucketName).key(jsonKey).build();
 
             s3Client.getObject(getObjectRequest, software.amazon.awssdk.core.sync.ResponseTransformer.toFile(jsonFilePath.toFile()));
 
@@ -506,9 +509,9 @@ public class Main {
 
             // Upload the updated JSON file to S3
             log.info("Uploading updated JSON file to S3: s3://{}/{}", bucketName, jsonKey);
-            software.amazon.awssdk.services.s3.model.PutObjectRequest putObjectRequest = software.amazon.awssdk.services.s3.model.PutObjectRequest.builder().bucket(bucketName).key(jsonKey).build();
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder().bucket(bucketName).key(jsonKey).build();
 
-            s3Client.putObject(putObjectRequest, software.amazon.awssdk.core.sync.RequestBody.fromFile(jsonFilePath));
+            s3Client.putObject(putObjectRequest, RequestBody.fromFile(jsonFilePath));
 
             log.info("Successfully updated JSON file in S3 with weightingAtr value: {}", weightingAtr);
         } catch (Exception e) {
